@@ -15,7 +15,8 @@ from pathlib import Path
 
 import anthropic
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 MODEL = "claude-opus-5"
@@ -205,9 +206,33 @@ def _call(system: str, user: str, schema: dict) -> dict:
     return json.loads(text)
 
 
+app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
+
+SITEMAP = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://whatpercent.co.kr/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
+</urlset>
+"""
+
+
 @app.get("/")
 def index():
     return FileResponse(BASE / "index.html")
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(BASE / "favicon.ico")
+
+
+@app.get("/robots.txt")
+def robots():
+    return PlainTextResponse("User-agent: *\nAllow: /\nSitemap: https://whatpercent.co.kr/sitemap.xml\n")
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    return Response(content=SITEMAP, media_type="application/xml")
 
 
 @app.get("/api/health")

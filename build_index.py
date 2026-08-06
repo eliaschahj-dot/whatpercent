@@ -9,11 +9,43 @@ html = SRC.read_text(encoding="utf-8")
 
 # 1) 헤더 라벨
 html = html.replace("대중 공감 온도계 · 데모 v2", "대중 공감 온도계 · 실제 AI")
-html = html.replace("<title>몇프로 — 대중 공감 온도계 (데모)</title>",
-                    "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
-                    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-                    "<title>몇프로 — 대중 공감 온도계 (실제 AI)</title></head><body>")
+HEAD = """<!doctype html><html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>몇프로 — 내 생각, 대중은 몇 %가 공감할까? | AI 대중 공감 온도계</title>
+<meta name="description" content="사연이나 의견을 입력하면 AI가 맞춤 질문을 만들고 대중 공감률(%)을 예측합니다. 축의금·가사분담·직장·연애·이웃 갈등, 내 편은 몇 %일까?">
+<link rel="canonical" href="https://whatpercent.co.kr/">
+<meta name="theme-color" content="#E8503A">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="몇프로">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="몇프로 — 내 생각, 대중은 몇 %가 공감할까?">
+<meta property="og:description" content="사연을 입력하면 AI가 맞춤 질문을 만들고 대중 공감률을 예측하는 공감 온도계.">
+<meta property="og:url" content="https://whatpercent.co.kr/">
+<meta property="og:image" content="https://whatpercent.co.kr/static/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"몇프로",
+ "alternateName":"whatpercent","url":"https://whatpercent.co.kr/",
+ "description":"AI가 사연을 읽고 대중 공감률을 예측하는 공감 온도계",
+ "applicationCategory":"LifestyleApplication","inLanguage":"ko",
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"KRW"}}
+</script>
+</head><body>"""
+html = html.replace("<title>몇프로 — 대중 공감 온도계 (데모)</title>", HEAD)
 html = html.rstrip() + "\n</body></html>\n"
+
+# 1.5) 헤더에 로고 마크 삽입
+html = html.replace(
+    '<div class="logo"><b>몇프로',
+    '<div class="logo"><img src="/static/logo-mark.svg" alt="몇프로 로고" '
+    'style="height:38px;width:38px;align-self:center;flex:none"><b>몇프로'
+)
 
 # 2) askbox에 상태 배너 + AI 표기 추가
 html = html.replace(

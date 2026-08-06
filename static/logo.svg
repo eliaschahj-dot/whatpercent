@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 64" role="img" aria-label="몇프로 — 대중 공감 온도계">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3A6BC9"/>
+      <stop offset="1" stop-color="#E8503A"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#g)"/>
+  <circle cx="23" cy="23" r="8" fill="none" stroke="#FFFFFF" stroke-width="5"/>
+  <circle cx="41" cy="41" r="8" fill="none" stroke="#FFFFFF" stroke-width="5"/>
+  <line x1="44" y1="17" x2="20" y2="47" stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round"/>
+  <text x="76" y="42" font-family="Pretendard, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif"
+        font-size="34" font-weight="800" letter-spacing="-1" fill="#22251F">몇프로</text>
+  <text x="186" y="42" font-family="Pretendard, 'Malgun Gothic', sans-serif"
+        font-size="34" font-weight="800" fill="#E8503A">%</text>
+</svg>
