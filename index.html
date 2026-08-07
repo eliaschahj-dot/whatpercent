@@ -93,14 +93,19 @@
     display:flex; gap:10px; align-items:flex-start;
   }
 
-  /* ---------- tabs ---------- */
-  .tabs{display:flex; gap:8px; margin:4px 0 0; padding:0 4px}
-  .tabs button{
-    flex:1; border:1px solid var(--line); background:var(--surface); color:var(--ink-soft);
-    border-radius:12px; padding:11px 10px; font-size:.9rem; font-weight:700; cursor:pointer;
+  /* ---------- 상단바: 로고 왼쪽 + 내비 오른쪽 ---------- */
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:26px 4px 6px; flex-wrap:wrap}
+  .topbar .logo b{font-size:1.3rem}
+  .topbar .logo img{height:26px !important; width:26px !important}
+  .topnav{display:flex; gap:2px; margin-left:auto}
+  .topnav button{
+    border:0; background:none; color:var(--ink-faint); font-size:.85rem; font-weight:700;
+    padding:8px 10px; border-radius:8px; cursor:pointer; white-space:nowrap;
   }
-  .tabs button.on{background:var(--ink); border-color:var(--ink); color:var(--bg)}
-  .tabs button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+  .topnav button:hover{color:var(--ink-soft); background:var(--surface2)}
+  .topnav button.on{color:var(--ink); text-decoration:underline; text-underline-offset:7px;
+    text-decoration-thickness:2.5px; text-decoration-color:var(--hot)}
+  .topnav button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
 
   /* ---------- ask loader (온도계 애니메이션) ---------- */
   .ask-loader{display:none; margin-top:16px; padding:10px 0 2px; flex-direction:column; align-items:center; gap:4px}
@@ -112,16 +117,14 @@
   @media (prefers-reduced-motion: reduce){ .ask-loader .bub{animation:none; opacity:.6} }
 
   /* ---------- home 세로 중앙 배치 (구글식) ---------- */
-  #tab-home{display:flex; flex-direction:column; justify-content:center; min-height:calc(100vh - 330px)}
-  #tab-home .askbox{margin:0}
+  #tab-home{display:flex; flex-direction:column; justify-content:center; min-height:calc(100vh - 200px)}
 
-  /* ---------- history (우측 하단 버튼 → 시트) ---------- */
+  /* ---------- history (재보기 아래 오른쪽 링크 → 시트) ---------- */
   .hist-link{
-    position:fixed; right:16px; bottom:16px; z-index:40;
-    border:1px solid var(--line); background:var(--surface); color:var(--ink-faint);
-    border-radius:99px; padding:8px 14px; font-size:.78rem; cursor:pointer; box-shadow:var(--shadow);
+    border:0; background:none; color:var(--ink-faint);
+    padding:5px 6px; font-size:.8rem; cursor:pointer; border-radius:8px;
   }
-  .hist-link:hover{color:var(--ink-soft); border-color:var(--ink-faint)}
+  .hist-link:hover{color:var(--ink-soft); text-decoration:underline; text-underline-offset:4px}
   .hist-link:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
   .hist-item{display:flex; gap:10px; align-items:baseline; padding:11px 2px; border-bottom:1px dotted var(--line); font-size:.87rem}
   .hist-item:last-child{border-bottom:0}
@@ -150,24 +153,25 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   @media (prefers-reduced-motion: reduce){ .crawl-note .dot{animation:none} *{transition:none !important} }
 
-  /* ---------- ask box ---------- */
-  .askbox{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-    box-shadow:var(--shadow); padding:18px; margin:22px 0 34px;
-  }
-  .askbox>label{font-size:.8rem; font-weight:700; color:var(--brand); letter-spacing:.08em}
-  .askrow{display:flex; gap:8px; margin-top:10px}
+  /* ---------- hero (구글식 중앙, 박스 없음) ---------- */
+  .hero{text-align:center}
+  .hero h1{font-size:1.7rem; font-weight:800; letter-spacing:-.025em; margin:0 0 10px; text-wrap:balance}
+  .hero h1 .deg{color:var(--hot)}
+  .hero-sub{font-size:.92rem; color:var(--ink-soft); margin:0 auto 28px; max-width:420px; text-wrap:balance}
+  .askrow{display:flex; gap:8px}
   .askrow input{
-    flex:1; border:1px solid var(--line); border-radius:10px; padding:11px 13px;
-    font:inherit; font-size:.95rem; background:var(--bg); color:var(--ink); min-width:0;
+    flex:1; border:1px solid var(--line); border-radius:99px; padding:15px 22px;
+    font:inherit; font-size:1rem; background:var(--surface); color:var(--ink); min-width:0;
+    box-shadow:var(--shadow);
   }
   .askrow input:focus{outline:2px solid var(--brand); outline-offset:1px}
   .askrow button{
-    border:0; border-radius:10px; padding:11px 18px; font-weight:700;
-    background:var(--hot); color:#fff; cursor:pointer; flex:none;
+    border:0; border-radius:99px; padding:15px 26px; font-weight:800; font-size:1rem;
+    background:var(--hot); color:#fff; cursor:pointer; flex:none; box-shadow:var(--shadow);
   }
   .askrow button:disabled{opacity:.5; cursor:default}
   .askrow button:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+  .under-row{display:flex; justify-content:flex-end; margin-top:10px; padding-right:8px}
   .ask-steps{margin:14px 0 0; font-size:.85rem; color:var(--ink-soft); display:none}
   .ask-steps div{padding:3px 0; opacity:0; transform:translateY(3px); transition:opacity .4s, transform .4s}
   .ask-steps div.on{opacity:1; transform:none}
@@ -175,7 +179,8 @@
     background:var(--gold-soft); color:var(--gold); border-radius:99px; padding:2px 9px; vertical-align:2px}
 
   /* quiz */
-  .ask-quiz{display:none; margin-top:16px; border-top:1px dashed var(--line); padding-top:14px}
+  .ask-quiz{display:none; margin-top:24px; background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; text-align:left}
   .quiz-intro{font-size:.86rem; color:var(--ink-soft); margin:0 0 12px}
   .quiz-intro b{color:var(--ink)}
   .qblock{margin-bottom:14px}
@@ -194,7 +199,8 @@
   .quiz-go:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
 
   /* ask result */
-  .ask-result{display:none; margin-top:16px; border-top:1px dashed var(--line); padding-top:14px}
+  .ask-result{display:none; margin-top:24px; background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:var(--shadow); padding:18px; text-align:left}
   .cond-list{margin:12px 0 0; padding:0; list-style:none; font-size:.82rem}
   .cond-list li{display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px dotted var(--line)}
   .cond-list .d-up{color:var(--hot); font-weight:700; font-variant-numeric:tabular-nums}
@@ -332,25 +338,25 @@
 </style>
 
 <div class="wrap">
-<header>
-  <div class="logo"><img src="/static/logo-mark.svg" alt="몇프로 로고" style="height:38px;width:38px;align-self:center;flex:none"><b>몇프로<span class="pct">%</span></b><span>대중 공감 온도계</span></div>
-  <p class="tagline">내 생각, 대중은 몇 %가 공감할까 — 묻기 전에 AI가 이미 쌓인 여론으로 먼저 재드립니다.</p>
+<header class="topbar">
+  <div class="logo"><img src="/static/logo-mark.svg" alt="몇프로 로고" style="height:26px;width:26px;align-self:center;flex:none"><b>몇프로<span class="pct">%</span></b></div>
+  <nav class="topnav" role="tablist">
+    <button class="on" data-tab="home" role="tab" aria-selected="true">온도 재보기</button>
+    <button data-tab="debates" role="tab" aria-selected="false">오늘의 논쟁 온도</button>
+  </nav>
 </header>
-
-<nav class="tabs" role="tablist">
-  <button class="on" data-tab="home" role="tab" aria-selected="true">🌡️ 내 생각 온도 재보기</button>
-  <button data-tab="debates" role="tab" aria-selected="false">🔥 오늘의 논쟁 온도</button>
-</nav>
 
 <div id="tab-home">
 
-<section class="askbox">
-  <label for="askInput">내 생각 온도 재보기</label>
-  <div id="healthBanner" class="trust-flag" style="display:none; margin-top:10px"></div>
+<section class="hero">
+  <h1>내 생각 온도 재보기<span class="deg">.</span></h1>
+  <p class="hero-sub">내 생각, 대중은 몇 %가 공감할까 — 묻기 전에 AI가 이미 쌓인 여론으로 먼저 재드립니다.</p>
+  <div id="healthBanner" class="trust-flag" style="display:none; margin:0 0 14px; text-align:left"></div>
   <div class="askrow">
-    <input id="askInput" type="text" placeholder="예: 축의금 5만 원 내고 밥 먹으러 가도 되지 않나?" />
+    <input id="askInput" type="text" aria-label="내 생각 온도 재보기" placeholder="예: 축의금 5만 원 내고 밥 먹으러 가도 되지 않나?" />
     <button id="askBtn">재보기</button>
   </div>
+  <div class="under-row"><button class="hist-link" id="histLink">🕐 최근 측정 히스토리</button></div>
   <div class="ask-loader" id="askLoader" aria-hidden="true">
     <svg width="76" height="120" viewBox="0 0 76 120" xmlns="http://www.w3.org/2000/svg">
       <text x="16" y="52" class="bub">%</text>
@@ -378,8 +384,6 @@
 
   <div class="ask-result" id="askResult"></div>
 </section>
-
-<button class="hist-link" id="histLink">🕐 최근 측정 히스토리</button>
 
 </div><!-- /tab-home -->
 
@@ -983,9 +987,9 @@ document.getElementById('histLink').addEventListener('click', openHistory);
 /* ================= 탭 ================= */
 var tabHome=document.getElementById('tab-home'), tabDebates=document.getElementById('tab-debates');
 var dailyLoaded=false;
-document.querySelectorAll('.tabs button').forEach(function(b){
+document.querySelectorAll('.topnav button').forEach(function(b){
   b.addEventListener('click', function(){
-    document.querySelectorAll('.tabs button').forEach(function(x){
+    document.querySelectorAll('.topnav button').forEach(function(x){
       x.classList.remove('on'); x.setAttribute('aria-selected','false');
     });
     b.classList.add('on'); b.setAttribute('aria-selected','true');
