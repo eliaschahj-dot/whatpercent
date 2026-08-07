@@ -23,7 +23,7 @@ from pathlib import Path
 
 import anthropic
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -535,9 +535,30 @@ SITEMAP = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+# 검색엔진 소유 확인 메타태그: 환경변수만 넣으면 자동 삽입 (코드 수정 불필요)
+_index_cache: str | None = None
+
+
+def _index_html() -> str:
+    global _index_cache
+    if _index_cache is None:
+        html = (BASE / "index.html").read_text(encoding="utf-8")
+        tags = ""
+        gv = os.environ.get("GOOGLE_SITE_VERIFICATION", "").strip().strip('"')
+        nv = os.environ.get("NAVER_SITE_VERIFICATION", "").strip().strip('"')
+        if gv:
+            tags += f'\n<meta name="google-site-verification" content="{gv}">'
+        if nv:
+            tags += f'\n<meta name="naver-site-verification" content="{nv}">'
+        if tags:
+            html = html.replace("</title>", "</title>" + tags, 1)
+        _index_cache = html
+    return _index_cache
+
+
 @app.get("/")
 def index():
-    return FileResponse(BASE / "index.html")
+    return HTMLResponse(_index_html())
 
 
 @app.get("/favicon.ico")

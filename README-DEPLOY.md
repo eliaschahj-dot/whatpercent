@@ -53,6 +53,24 @@ git push -u origin main
    투표(오늘 날짜만, 재클릭 시 변경)가 가능하고, 3건 이상 투표하면 '나는 어떤 사람일까?' 8각형 분석이 열림.
    투표는 `data/votes.jsonl`, 분석 캐시는 `data/profiles/`에 저장(디스크에 영구 보관).
 
+## 4.6 검색엔진 등록 (구글·네이버)
+소유 확인 메타태그는 환경변수만 넣으면 서버가 자동 삽입한다 (코드 수정 불필요).
+
+**구글 (Search Console)**
+1. https://search.google.com/search-console → `URL 접두어`에 `https://whatpercent.co.kr` 입력
+2. 소유 확인 방법 중 **HTML 태그** 선택 → `content="..."` 안의 값만 복사
+3. Render 환경변수 `GOOGLE_SITE_VERIFICATION`=(복사한 값) 추가 → 재배포 후 콘솔에서 **확인** 클릭
+4. 확인 완료 후 좌측 **Sitemaps** 메뉴 → `https://whatpercent.co.kr/sitemap.xml` 제출
+
+**네이버 (서치어드바이저)**
+1. https://searchadvisor.naver.com → 웹마스터 도구 → 사이트 등록 `https://whatpercent.co.kr`
+2. 소유 확인 방법 중 **HTML 태그** 선택 → `content="..."` 값 복사
+3. Render 환경변수 `NAVER_SITE_VERIFICATION`=(복사한 값) 추가 → 재배포 후 **소유확인** 클릭
+4. 확인 완료 후 **요청 → 사이트맵 제출**: `https://whatpercent.co.kr/sitemap.xml`
+   + **요청 → 웹 페이지 수집**에서 메인 URL 수집 요청
+
+색인 반영은 구글 수일~2주, 네이버 1~4주 정도 걸릴 수 있음.
+
 ## 5. 운영 메모
 - **데이터 보관(히스토리·오늘의 논쟁)**: `data/` 폴더(JSON 파일)에 저장됨. Render 기본 디스크는
   재배포·재시작 시 초기화되므로, 영구 보관하려면 Render **Persistent Disk**(예: 1GB, $0.25/월)를
