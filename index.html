@@ -1034,7 +1034,7 @@ document.querySelectorAll('.topnav button').forEach(function(b){
     });
     b.classList.add('on'); b.setAttribute('aria-selected','true');
     var home=b.dataset.tab==='home';
-    tabHome.style.display=home?'block':'none';
+    tabHome.style.display=home?'flex':'none';
     tabDebates.style.display=home?'none':'block';
     if(!home && !dailyLoaded){ dailyLoaded=true; initDaily(); }
     window.scrollTo({top:0});
