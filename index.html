@@ -196,16 +196,17 @@
   .hero h1{font-size:1.7rem; font-weight:800; letter-spacing:-.025em; margin:0 0 10px; text-wrap:balance}
   .hero h1 .deg{color:var(--hot)}
   .hero-sub{font-size:.92rem; color:var(--ink-soft); margin:0 auto 28px; max-width:420px; text-wrap:balance}
-  .askrow{display:flex; gap:8px}
-  .askrow input{
-    flex:1; border:1px solid var(--line); border-radius:99px; padding:15px 22px;
-    font:inherit; font-size:1rem; background:var(--surface); color:var(--ink); min-width:0;
-    box-shadow:var(--shadow);
+  .askrow{display:flex; flex-direction:column; gap:12px}
+  .askrow textarea{
+    width:100%; box-sizing:border-box; border:1px solid var(--line); border-radius:20px;
+    padding:15px 22px; font:inherit; font-size:1rem; line-height:1.55;
+    background:var(--surface); color:var(--ink); box-shadow:var(--shadow);
+    resize:none; overflow:hidden; display:block;
   }
-  .askrow input:focus{outline:2px solid var(--brand); outline-offset:1px}
+  .askrow textarea:focus{outline:2px solid var(--brand); outline-offset:1px}
   .askrow button{
-    border:0; border-radius:99px; padding:15px 26px; font-weight:800; font-size:1rem;
-    background:var(--hot); color:#fff; cursor:pointer; flex:none; box-shadow:var(--shadow);
+    width:100%; border:0; border-radius:99px; padding:15px 26px; font-weight:800; font-size:1rem;
+    background:var(--hot); color:#fff; cursor:pointer; box-shadow:var(--shadow);
   }
   .askrow button:disabled{opacity:.5; cursor:default}
   .askrow button:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
@@ -392,7 +393,7 @@
   <p class="hero-sub">내 생각, 대중은 몇 %가 공감할까 — 묻기 전에 AI가 이미 쌓인 여론으로 먼저 재드립니다.</p>
   <div id="healthBanner" class="trust-flag" style="display:none; margin:0 0 14px; text-align:left"></div>
   <div class="askrow">
-    <input id="askInput" type="text" aria-label="내 생각 온도 재보기" placeholder="예: 축의금 5만 원 내고 밥 먹으러 가도 되지 않나?" />
+    <textarea id="askInput" rows="2" aria-label="내 생각 온도 재보기" placeholder="예: 축의금 5만 원 내고 밥 먹으러 가도 되지 않나?"></textarea>
     <button id="askBtn">재보기</button>
   </div>
   <div class="under-row"><button class="hist-link" id="histLink">🕐 최근 측정 히스토리</button></div>
@@ -988,7 +989,13 @@ quizGo.addEventListener('click', function(){
   .catch(function(){ showError('서버에 연결할 수 없습니다.'); });
 });
 askBtn.addEventListener('click', runAsk);
-askInput.addEventListener('keydown', function(e){ if(e.key==='Enter') runAsk(); });
+askInput.addEventListener('keydown', function(e){
+  if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); runAsk(); }
+});
+askInput.addEventListener('input', function(){
+  askInput.style.height='auto';
+  askInput.style.height=askInput.scrollHeight+'px';
+});
 
 /* ================= 측정 히스토리 (우측 하단 버튼 → 시트) ================= */
 function timeAgo(ts){
