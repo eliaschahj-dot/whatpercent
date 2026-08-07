@@ -1,7 +1,10 @@
 """몇프로 — 대중 공감 온도계: 실제 AI 백엔드 데모.
 
 POST /api/questions  사연 → AI가 그 사연 맞춤 추가 질문 3~5개 생성
-POST /api/predict    사연 + 답변 → AI가 공감률 예측 + 근거
+POST /api/predict    사연 + 답변 → AI가 공감률 예측 + 근거 (+히스토리 기록)
+GET  /api/history    최근 측정 히스토리
+GET  /api/daily      오늘의 논쟁 5건 (매일 AI가 웹 검색으로 선정, 날짜별 보관)
+GET  /api/daily/dates 보관된 날짜 목록
 GET  /api/health     자격증명 확인
 GET  /                프론트엔드
 """
@@ -11,6 +14,7 @@ import os
 import threading
 import time
 from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import anthropic
@@ -21,6 +25,19 @@ from pydantic import BaseModel
 
 MODEL = "claude-opus-5"
 BASE = Path(__file__).parent
+
+# 데이터 보관 위치 (Render 재배포 시 초기화됨 — 영구 보관하려면 Persistent Disk를 붙이고 DATA_DIR=/data 설정)
+DATA_DIR = Path(os.environ.get("DATA_DIR", BASE / "data"))
+DAILY_DIR = DATA_DIR / "daily"
+HISTORY_FILE = DATA_DIR / "history.jsonl"
+DAILY_DIR.mkdir(parents=True, exist_ok=True)
+
+KST = timezone(timedelta(hours=9))
+CURATED_DATE = "2026-08-05"  # 창간호(실측 수집분) — 프론트 HTML에 보관
+
+
+def _kst_today() -> str:
+    return datetime.now(KST).strftime("%Y-%m-%d")
 
 # 자격증명 해석 순서: 프로세스 환경변수 → 프로젝트 key.txt → Windows 사용자 환경변수(setx, 레지스트리)
 _key_file = BASE / "key.txt"
@@ -92,6 +109,7 @@ class Answer(BaseModel):
 class PredictIn(BaseModel):
     story: str
     answers: list[Answer]
+    topic_label: str = ""
 
 
 QUESTIONS_SCHEMA = {
@@ -180,6 +198,166 @@ SYSTEM_PREDICT = """너는 '몇프로' — 한국 대중 공감 온도계 서비
 - summary는 정서의 '이유'를 설명한다 (누가 왜 공감하고, 누가 왜 반대하는지). 존댓말 사용."""
 
 
+# ---------- 측정 히스토리 (다른 사람들이 뭘 재봤는지) ----------
+_hist_lock = threading.Lock()
+
+
+def _log_history(entry: dict):
+    """예측 1건을 JSONL로 기록. 사연은 100자까지만 저장(개인정보 노출 최소화)."""
+    try:
+        with _hist_lock:
+            with HISTORY_FILE.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            # 1,000건 초과 시 최근 500건만 유지
+            lines = HISTORY_FILE.read_text(encoding="utf-8").splitlines()
+            if len(lines) > 1000:
+                HISTORY_FILE.write_text("\n".join(lines[-500:]) + "\n", encoding="utf-8")
+    except OSError:
+        pass  # 기록 실패는 예측 응답을 막지 않는다
+
+
+def _read_history(limit: int = 30) -> list[dict]:
+    try:
+        with _hist_lock:
+            if not HISTORY_FILE.exists():
+                return []
+            lines = HISTORY_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for ln in reversed(lines[-limit * 2:]):
+        try:
+            out.append(json.loads(ln))
+        except json.JSONDecodeError:
+            continue
+        if len(out) >= limit:
+            break
+    return out
+
+
+# ---------- 오늘의 논쟁: 매일 AI가 웹 검색으로 5건 선정 ----------
+DAILY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "논쟁 제목 (커뮤니티 글 제목 느낌)"},
+                    "source": {"type": "string", "description": "논쟁이 도는 곳 (예: 네이트판, 더쿠, 커뮤니티 전반)"},
+                    "summary": {"type": "string", "description": "무엇이 쟁점인지 2~3문장, 존댓말"},
+                    "side_a": {"type": "string", "description": "글쓴이/찬성 편 입장 한 줄"},
+                    "side_b": {"type": "string", "description": "반대 편 입장 한 줄"},
+                    "percent": {"type": "integer", "description": "전국 평균 기준 side_a 공감률 예측 0~100"},
+                    "verdict": {"type": "string", "description": "8자 내외 한 줄 판정"},
+                    "groups": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "percent": {"type": "integer"},
+                            },
+                            "required": ["label", "percent"],
+                            "additionalProperties": False,
+                        },
+                        "description": "온도차가 큰 집단 2~3개",
+                    },
+                },
+                "required": ["title", "source", "summary", "side_a", "side_b", "percent", "verdict", "groups"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["items"],
+    "additionalProperties": False,
+}
+
+SYSTEM_DAILY_SEARCH = """너는 '몇프로' — 한국 대중 공감 온도계 서비스의 에디터 AI다.
+웹 검색으로 지금 한국 온라인 커뮤니티(네이트판, 더쿠, 디시인사이드, 인스티즈, X 등)에서
+실제로 화제가 되고 있는 '찬반이 갈리는 생활 논쟁'을 찾아라.
+정치·종교·특정인 비방은 제외하고, 일상 갈등(경조사, 가사분담, 직장, 연애, 이웃, 소비 습관 등)을 우선한다.
+찾은 논쟁 5건에 대해 각각: 제목, 어디서 도는지, 쟁점 요약, 양측 입장을 정리해라."""
+
+SYSTEM_DAILY_STRUCT = """너는 '몇프로' — 한국 대중 공감 온도계 서비스의 예측 AI다.
+아래 조사 내용을 바탕으로 논쟁 5건을 구조화하고, 각 논쟁에 대해
+한국 대중(전 연령 온라인 인구, 커뮤니티 편향 보정한 전국 평균)이 side_a에 공감할 비율을 추정하라.
+percent는 과감하게 구체적으로, groups에는 그 논쟁에서 온도차가 가장 클 집단을 고른다. 존댓말 사용."""
+
+_daily_lock = threading.Lock()
+_daily_state = {"generating": None, "last_error": None, "error_at": 0.0}
+
+
+def _search_trending() -> str:
+    """웹 검색 도구로 오늘의 논쟁을 조사 (pause_turn 재개 처리 포함)."""
+    msgs = [{"role": "user", "content": "오늘 한국 커뮤니티에서 화제인 찬반 논쟁 5건을 찾아 정리해라."}]
+    resp = None
+    for _ in range(6):
+        resp = client.messages.create(
+            model=MODEL,
+            max_tokens=6000,
+            system=SYSTEM_DAILY_SEARCH,
+            output_config={"effort": "low"},
+            tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            messages=msgs,
+        )
+        if resp.stop_reason == "pause_turn":
+            msgs = [msgs[0], {"role": "assistant", "content": resp.content}]
+            continue
+        break
+    if resp is None or resp.stop_reason == "refusal":
+        raise RuntimeError("검색 요청이 거절되었습니다.")
+    return "\n".join(b.text for b in resp.content if b.type == "text")
+
+
+def _generate_daily(date_str: str):
+    """오늘의 논쟁 5건 생성 → data/daily/YYYY-MM-DD.json 저장. 백그라운드 스레드에서 실행."""
+    try:
+        method = "web_search"
+        try:
+            research = _search_trending()
+        except Exception:  # noqa: BLE001 — 검색 실패 시 모델 지식 기반으로 폴백
+            method = "knowledge"
+            research = ("웹 검색을 사용할 수 없다. 네가 아는 한국 커뮤니티에서 반복적으로 화제가 되는 "
+                        "'찬반이 갈리는 생활 논쟁' 유형 중 요즘 시기에 어울리는 5건을 만들어라.")
+        data = _call(SYSTEM_DAILY_STRUCT, f"조사 내용:\n{research}\n\n논쟁 5건을 구조화하라.", DAILY_SCHEMA)
+        items = data.get("items", [])[:5]
+        for it in items:
+            it["percent"] = max(0, min(100, int(it.get("percent", 50))))
+        payload = {
+            "date": date_str,
+            "generated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
+            "method": method,
+            "items": items,
+        }
+        tmp = DAILY_DIR / f"{date_str}.json.tmp"
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.replace(DAILY_DIR / f"{date_str}.json")
+        with _daily_lock:
+            _daily_state["last_error"] = None
+    except Exception as e:  # noqa: BLE001
+        with _daily_lock:
+            _daily_state["last_error"] = str(e)
+            _daily_state["error_at"] = time.time()
+    finally:
+        with _daily_lock:
+            _daily_state["generating"] = None
+
+
+def _kick_daily(date_str: str):
+    """오늘자 파일이 없으면 생성 스레드를 1개만 띄운다. 실패 후 10분간 재시도 금지."""
+    with _daily_lock:
+        if (DAILY_DIR / f"{date_str}.json").exists():
+            return
+        if _daily_state["generating"] == date_str:
+            return
+        if _daily_state["last_error"] and time.time() - _daily_state["error_at"] < 600:
+            return
+        _daily_state["generating"] = date_str
+    threading.Thread(target=_generate_daily, args=(date_str,), daemon=True).start()
+
+
 def _call(system: str, user: str, schema: dict) -> dict:
     """Claude 호출 (구조화 출력). 서버측 폴백 베타를 우선 시도, 미지원 조직이면 일반 경로로 재시도."""
     kwargs = dict(
@@ -233,6 +411,47 @@ def robots():
 @app.get("/sitemap.xml")
 def sitemap():
     return Response(content=SITEMAP, media_type="application/xml")
+
+
+@app.on_event("startup")
+def _startup():
+    _kick_daily(_kst_today())
+
+
+@app.get("/api/history")
+def history(limit: int = 30):
+    return {"items": _read_history(max(1, min(100, limit)))}
+
+
+@app.get("/api/daily")
+def daily(date: str | None = None):
+    today = _kst_today()
+    d = (date or today).strip()
+    if not (len(d) == 10 and d[4] == "-" and d[7] == "-" and d.replace("-", "").isdigit()):
+        return JSONResponse(status_code=400, content={"error": "bad_date"})
+    f = DAILY_DIR / f"{d}.json"
+    if f.exists():
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return JSONResponse(status_code=500, content={"error": "read_failed"})
+    if d == today:
+        _kick_daily(today)
+        with _daily_lock:
+            err = _daily_state["last_error"]
+            generating = _daily_state["generating"] == today
+        if err and not generating:
+            return JSONResponse(status_code=503, content={
+                "status": "error", "date": today,
+                "message": "오늘의 논쟁 생성에 실패했습니다. 잠시 후 자동으로 재시도합니다."})
+        return JSONResponse(status_code=202, content={"status": "generating", "date": today})
+    return JSONResponse(status_code=404, content={"error": "not_found", "date": d})
+
+
+@app.get("/api/daily/dates")
+def daily_dates():
+    dates = sorted((p.stem for p in DAILY_DIR.glob("????-??-??.json")), reverse=True)
+    return {"dates": dates, "curated": CURATED_DATE, "today": _kst_today()}
 
 
 @app.get("/api/health")
@@ -300,6 +519,13 @@ def predict(body: PredictIn, request: Request):
             PREDICT_SCHEMA,
         )
         data["percent"] = max(0, min(100, int(data["percent"])))
+        _log_history({
+            "ts": int(time.time()),
+            "story": body.story.strip()[:100],
+            "label": body.topic_label.strip()[:40],
+            "percent": data["percent"],
+            "verdict": str(data.get("verdict", ""))[:20],
+        })
         return data
     except anthropic.AuthenticationError:
         return JSONResponse(status_code=401, content={"error": "auth", "message": "API 자격증명이 없습니다. ANTHROPIC_API_KEY를 설정하세요."})
