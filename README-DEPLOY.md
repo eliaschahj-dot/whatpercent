@@ -40,6 +40,19 @@ git push -u origin main
 - 측정 1회 실행해 질문 생성·예측 동작 확인
 - Anthropic 콘솔에서 사용량/지출 한도(Spend limit) 설정 권장
 
+## 4.5 구글 로그인 설정 (논쟁 투표·성향 분석에 필요)
+1. https://console.cloud.google.com → 프로젝트 생성(또는 기존 선택)
+2. **API 및 서비스 → OAuth 동의 화면**: User Type `외부`, 앱 이름 `몇프로`, 지원 이메일 입력 → 저장
+   (테스트 게시 상태면 테스트 사용자에 본인 지메일 추가)
+3. **API 및 서비스 → 사용자 인증 정보 → 사용자 인증 정보 만들기 → OAuth 클라이언트 ID**
+   - 애플리케이션 유형: `웹 애플리케이션`
+   - 승인된 JavaScript 원본: `https://whatpercent.co.kr` (로컬 테스트도 하려면 `http://localhost:8756` 추가)
+   - 리디렉션 URI는 비워둠 (ID 토큰 방식이라 불필요)
+4. 발급된 **클라이언트 ID**(`xxxx.apps.googleusercontent.com`)를 Render 환경변수 `GOOGLE_CLIENT_ID`로 추가 → 자동 재배포
+5. 사이트 우측 상단에 구글 로그인 버튼이 나타나면 완료. 로그인 후 '오늘의 논쟁'에서 긍정/부정
+   투표(오늘 날짜만, 재클릭 시 변경)가 가능하고, 3건 이상 투표하면 '나는 어떤 사람일까?' 8각형 분석이 열림.
+   투표는 `data/votes.jsonl`, 분석 캐시는 `data/profiles/`에 저장(디스크에 영구 보관).
+
 ## 5. 운영 메모
 - **데이터 보관(히스토리·오늘의 논쟁)**: `data/` 폴더(JSON 파일)에 저장됨. Render 기본 디스크는
   재배포·재시작 시 초기화되므로, 영구 보관하려면 Render **Persistent Disk**(예: 1GB, $0.25/월)를

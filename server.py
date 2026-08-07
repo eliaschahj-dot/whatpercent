@@ -9,8 +9,12 @@ GET  /api/health     자격증명 확인
 GET  /                프론트엔드
 """
 
+import base64
+import hashlib
+import hmac
 import json
 import os
+import secrets as pysecrets
 import threading
 import time
 from collections import defaultdict, deque
@@ -38,6 +42,56 @@ CURATED_DATE = "2026-08-05"  # 창간호(실측 수집분) — 프론트 HTML에
 
 def _kst_today() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d")
+
+
+# ---------- 구글 로그인 + 자체 세션 토큰 ----------
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+SECRET_FILE = DATA_DIR / "secret.txt"
+
+
+def _session_secret() -> bytes:
+    env = os.environ.get("SESSION_SECRET", "").strip()
+    if env:
+        return env.encode()
+    if SECRET_FILE.exists():
+        return SECRET_FILE.read_text(encoding="utf-8").strip().encode()
+    s = pysecrets.token_hex(32)
+    SECRET_FILE.write_text(s, encoding="utf-8")
+    return s.encode()
+
+
+SESSION_SECRET = _session_secret()
+
+
+def _make_token(uid: str, name: str, picture: str) -> str:
+    payload = json.dumps(
+        {"u": uid, "n": name[:40], "p": picture[:300], "e": int(time.time()) + 30 * 86400},
+        ensure_ascii=False,
+    )
+    b = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+    sig = hmac.new(SESSION_SECRET, b.encode(), hashlib.sha256).hexdigest()[:32]
+    return b + "." + sig
+
+
+def _auth_user(request: Request) -> dict | None:
+    """Authorization: Bearer <token> 검증. 실패 시 None."""
+    h = request.headers.get("authorization", "")
+    if not h.lower().startswith("bearer "):
+        return None
+    tok = h[7:].strip()
+    if "." not in tok:
+        return None
+    b, sig = tok.rsplit(".", 1)
+    good = hmac.new(SESSION_SECRET, b.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(sig, good):
+        return None
+    try:
+        data = json.loads(base64.urlsafe_b64decode(b + "=" * (-len(b) % 4)))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict) or data.get("e", 0) < time.time():
+        return None
+    return data
 
 # 자격증명 해석 순서: 프로세스 환경변수 → 프로젝트 key.txt → Windows 사용자 환경변수(setx, 레지스트리)
 _key_file = BASE / "key.txt"
@@ -110,6 +164,16 @@ class PredictIn(BaseModel):
     story: str
     answers: list[Answer]
     topic_label: str = ""
+
+
+class GoogleAuthIn(BaseModel):
+    credential: str
+
+
+class VoteIn(BaseModel):
+    date: str
+    idx: int
+    side: str  # "a"(긍정) | "b"(부정)
 
 
 QUESTIONS_SCHEMA = {
@@ -233,6 +297,84 @@ def _read_history(limit: int = 30) -> list[dict]:
         if len(out) >= limit:
             break
     return out
+
+
+# ---------- 논쟁 투표 (구글 로그인 사용자, 오늘만) ----------
+VOTES_FILE = DATA_DIR / "votes.jsonl"
+PROFILE_DIR = DATA_DIR / "profiles"
+PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+_votes_lock = threading.Lock()
+
+AXIS_LABELS = ["공감", "원칙", "실리", "전통", "개인 자유", "공동체", "직설", "신중"]
+
+
+def _append_vote(entry: dict):
+    with _votes_lock:
+        with VOTES_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def _read_all_votes() -> list[dict]:
+    with _votes_lock:
+        if not VOTES_FILE.exists():
+            return []
+        lines = VOTES_FILE.read_text(encoding="utf-8").splitlines()
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _effective_votes(votes: list[dict]) -> dict:
+    """(uid, date, idx) → 마지막 투표(재클릭 시 변경 허용)."""
+    eff = {}
+    for v in votes:
+        eff[(v.get("uid"), v.get("date"), v.get("idx"))] = v
+    return eff
+
+
+def _vote_counts(date: str) -> dict:
+    """해당 날짜의 항목별 긍정/부정 집계."""
+    eff = _effective_votes([v for v in _read_all_votes() if v.get("date") == date])
+    counts: dict[int, dict[str, int]] = {}
+    for v in eff.values():
+        c = counts.setdefault(v["idx"], {"a": 0, "b": 0})
+        c[v["side"]] = c.get(v["side"], 0) + 1
+    return counts
+
+
+PROFILE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "persona": {"type": "string", "description": "성향 별명 한 줄 (예: 따뜻한 원칙주의자)"},
+        "summary": {"type": "string", "description": "투표 이력에서 드러나는 성향 2~3문장, 존댓말"},
+        "axes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string"},
+                    "score": {"type": "integer", "description": "0~100"},
+                },
+                "required": ["label", "score"],
+                "additionalProperties": False,
+            },
+            "description": "정확히 8개, 고정 순서: 공감, 원칙, 실리, 전통, 개인 자유, 공동체, 직설, 신중",
+        },
+    },
+    "required": ["persona", "summary", "axes"],
+    "additionalProperties": False,
+}
+
+SYSTEM_PROFILE = """너는 '몇프로' — 한국 대중 공감 온도계 서비스의 성향 분석 AI다.
+사용자가 논쟁들에서 어느 편(긍정=글쓴이/찬성 편, 부정=반대 편)을 골랐는지 이력을 보고,
+아래 8개 축 각각을 0~100으로 채점한다 (50이 중간). 축은 반드시 이 순서·이 이름 그대로:
+공감(타인 감정 이해), 원칙(규칙·도리 중시), 실리(실용·경제성), 전통(관습·격식 존중),
+개인 자유(개인 선택 우선), 공동체(집단·배려 우선), 직설(할 말은 함), 신중(중재·갈등 회피).
+persona는 매력적인 별명 한 줄, summary는 근거가 드러나는 요약. 존댓말 사용."""
 
 
 # ---------- 오늘의 논쟁: 매일 AI가 웹 검색으로 5건 선정 ----------
@@ -421,6 +563,125 @@ def _startup():
 @app.get("/api/history")
 def history(limit: int = 30):
     return {"items": _read_history(max(1, min(100, limit)))}
+
+
+@app.get("/api/config")
+def config():
+    return {"google_client_id": GOOGLE_CLIENT_ID or None}
+
+
+@app.post("/api/auth/google")
+def auth_google(body: GoogleAuthIn):
+    if not GOOGLE_CLIENT_ID:
+        return JSONResponse(status_code=503, content={
+            "error": "not_configured",
+            "message": "구글 로그인이 아직 설정되지 않았습니다 (GOOGLE_CLIENT_ID 환경변수 필요)."})
+    try:
+        from google.auth.transport import requests as g_requests
+        from google.oauth2 import id_token as g_id_token
+        info = g_id_token.verify_oauth2_token(body.credential, g_requests.Request(), GOOGLE_CLIENT_ID)
+    except Exception:  # noqa: BLE001 — 만료·위조·클라이언트ID 불일치 등
+        return JSONResponse(status_code=401, content={
+            "error": "invalid_token", "message": "구글 토큰 검증에 실패했습니다. 다시 로그인해 주세요."})
+    uid = str(info["sub"])
+    name = info.get("name") or (info.get("email") or "사용자").split("@")[0]
+    picture = info.get("picture", "")
+    return {"token": _make_token(uid, name, picture), "name": name, "picture": picture}
+
+
+@app.post("/api/vote")
+def vote(body: VoteIn, request: Request):
+    user = _auth_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={
+            "error": "login_required", "message": "구글 로그인을 해야 참여할 수 있습니다."})
+    today = _kst_today()
+    if body.date != today:
+        return JSONResponse(status_code=400, content={
+            "error": "not_today", "message": "투표는 '오늘'의 논쟁에만 참여할 수 있습니다."})
+    if body.side not in ("a", "b"):
+        return JSONResponse(status_code=400, content={"error": "bad_side"})
+    f = DAILY_DIR / f"{today}.json"
+    if not f.exists():
+        return JSONResponse(status_code=400, content={"error": "no_daily", "message": "오늘의 논쟁이 아직 준비되지 않았습니다."})
+    items = json.loads(f.read_text(encoding="utf-8")).get("items", [])
+    if not (0 <= body.idx < len(items)):
+        return JSONResponse(status_code=400, content={"error": "bad_idx"})
+    it = items[body.idx]
+    _append_vote({
+        "uid": user["u"], "date": today, "idx": body.idx, "side": body.side,
+        "title": it.get("title", "")[:120],
+        "side_text": (it.get("side_a") if body.side == "a" else it.get("side_b", ""))[:120],
+        "ts": int(time.time()),
+    })
+    counts = _vote_counts(today).get(body.idx, {"a": 0, "b": 0})
+    return {"ok": True, "my": body.side, "counts": counts}
+
+
+@app.get("/api/votes/me")
+def votes_me(request: Request, date: str | None = None):
+    user = _auth_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={
+            "error": "login_required", "message": "구글 로그인을 해야 참여할 수 있습니다."})
+    d = (date or _kst_today()).strip()
+    eff = _effective_votes([v for v in _read_all_votes() if v.get("date") == d])
+    mine = {str(v["idx"]): v["side"] for v in eff.values() if v.get("uid") == user["u"]}
+    counts = {str(k): c for k, c in _vote_counts(d).items()}
+    total = len(_effective_votes([v for v in _read_all_votes() if v.get("uid") == user["u"]]))
+    return {"votes": mine, "counts": counts, "my_total": total}
+
+
+@app.get("/api/profile/me")
+def profile_me(request: Request):
+    user = _auth_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={
+            "error": "login_required", "message": "구글 로그인을 해야 분석을 볼 수 있습니다."})
+    my = [v for v in _effective_votes(_read_all_votes()).values() if v.get("uid") == user["u"]]
+    my.sort(key=lambda v: (v.get("date", ""), v.get("idx", 0)))
+    n = len(my)
+    if n < 3:
+        return {"status": "not_enough", "count": n,
+                "message": f"지금까지 {n}건 참여했습니다. 3건 이상 투표하면 성향을 분석해 드려요."}
+    uid_hash = hashlib.sha256(user["u"].encode()).hexdigest()[:24]
+    cache_file = PROFILE_DIR / f"{uid_hash}.json"
+    if cache_file.exists():
+        try:
+            cached = json.loads(cache_file.read_text(encoding="utf-8"))
+            if cached.get("count") == n:
+                return {"status": "ok", "count": n, "profile": cached["profile"]}
+        except (OSError, json.JSONDecodeError):
+            pass
+    limited = _rate_limit(request)
+    if limited:
+        return limited
+    lines = "\n".join(
+        f"- [{v.get('date')}] {v.get('title')} → {'긍정' if v.get('side') == 'a' else '부정'}"
+        f" (선택한 입장: {v.get('side_text', '')})"
+        for v in my[-40:]
+    )
+    try:
+        data = _call(SYSTEM_PROFILE, f"투표 이력 {n}건:\n{lines}\n\n8축 성향을 분석하라.", PROFILE_SCHEMA)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse(status_code=502, content={"error": "ai", "message": str(e)})
+    axes = data.get("axes", [])[:8]
+    fixed = []
+    for i, lab in enumerate(AXIS_LABELS):
+        score = 50
+        if i < len(axes):
+            try:
+                score = max(0, min(100, int(axes[i].get("score", 50))))
+            except (TypeError, ValueError):
+                score = 50
+        fixed.append({"label": lab, "score": score})
+    profile = {"persona": str(data.get("persona", ""))[:40],
+               "summary": str(data.get("summary", ""))[:400], "axes": fixed}
+    try:
+        cache_file.write_text(json.dumps({"count": n, "profile": profile}, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass
+    return {"status": "ok", "count": n, "profile": profile}
 
 
 @app.get("/api/daily")

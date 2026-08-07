@@ -25,6 +25,7 @@
  "applicationCategory":"LifestyleApplication","inLanguage":"ko",
  "offers":{"@type":"Offer","price":"0","priceCurrency":"KRW"}}
 </script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head><body>
 <style>
   :root{
@@ -106,6 +107,43 @@
   .topnav button.on{color:var(--ink); text-decoration:underline; text-underline-offset:7px;
     text-decoration-thickness:2.5px; text-decoration-color:var(--hot)}
   .topnav button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+
+  /* ---------- auth ---------- */
+  .auth-area{display:flex; align-items:center; gap:8px; min-height:32px}
+  .auth-area .avatar{width:26px; height:26px; border-radius:50%; object-fit:cover; border:1px solid var(--line)}
+  .auth-area .uname{font-size:.8rem; font-weight:700; color:var(--ink-soft); max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .auth-area .logout{border:0; background:none; color:var(--ink-faint); font-size:.72rem; cursor:pointer; padding:4px}
+  .auth-area .logout:hover{color:var(--ink-soft); text-decoration:underline}
+
+  /* ---------- daily 투표 ---------- */
+  .dvote{display:flex; gap:8px}
+  .dvote button{
+    flex:1; border:1px solid var(--line); background:var(--surface); color:var(--ink);
+    border-radius:10px; padding:10px; font-size:.88rem; font-weight:700; cursor:pointer;
+  }
+  .dvote button:hover{border-color:var(--ink-faint)}
+  .dvote button.sel-a{background:var(--hot); border-color:var(--hot); color:#fff}
+  .dvote button.sel-b{background:var(--cold); border-color:var(--cold); color:#fff}
+  .dvote button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+  .dv-res{display:none; margin-top:10px; font-size:.83rem; color:var(--ink-soft)}
+  .dv-login{display:none; margin-top:10px; padding:10px 12px; border-radius:9px; background:var(--gold-soft); font-size:.83rem}
+  .dv-login b{color:var(--gold)}
+  .vote-note{font-size:.78rem; color:var(--ink-faint); margin-top:12px; padding-top:12px; border-top:1px solid var(--line)}
+
+  /* ---------- 성향 분석 ---------- */
+  .profile-btn{
+    width:100%; margin:0 0 16px; border:1px dashed var(--brand); background:var(--brand-soft);
+    color:var(--brand); border-radius:12px; padding:12px; font-size:.9rem; font-weight:800; cursor:pointer;
+  }
+  .profile-btn:hover{border-style:solid}
+  .profile-btn:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+  .radar-wrap{text-align:center}
+  .radar-wrap .persona{font-size:1.25rem; font-weight:800; margin:2px 0 4px}
+  .radar-wrap .p-count{font-size:.78rem; color:var(--ink-faint); margin-bottom:8px}
+  .radar-wrap .p-sum{font-size:.88rem; color:var(--ink-soft); text-align:left; margin:12px 0}
+  .axis-list{margin:10px 0 0; padding:0; list-style:none; font-size:.82rem; text-align:left}
+  .axis-list li{display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px dotted var(--line)}
+  .axis-list .sc{font-weight:800; font-variant-numeric:tabular-nums}
 
   /* ---------- ask loader (온도계 애니메이션) ---------- */
   .ask-loader{display:none; margin-top:16px; padding:10px 0 2px; flex-direction:column; align-items:center; gap:4px}
@@ -344,6 +382,7 @@
     <button class="on" data-tab="home" role="tab" aria-selected="true">온도 재보기</button>
     <button data-tab="debates" role="tab" aria-selected="false">오늘의 논쟁 온도</button>
   </nav>
+  <div class="auth-area" id="authArea"></div>
 </header>
 
 <div id="tab-home">
@@ -393,6 +432,7 @@
   <h2>오늘의 논쟁 온도</h2>
   <span>AI가 매일 새로 뽑는 5건</span>
 </div>
+<button class="profile-btn" id="profileBtn">🎯 나는 어떤 사람일까? — 내 투표 성향 8각형 분석</button>
 <div class="date-nav" id="dateNav"></div>
 <div id="dailyWrap"><div class="daily-wait">불러오는 중…</div></div>
 
@@ -1064,10 +1104,11 @@ function loadDaily(dt){
 
 function renderDaily(data){
   var items=data.items||[];
+  var isToday=data.date===todayStr;
   var head='<p class="daily-note" style="margin:0 4px 14px">'+esc(data.date||'')+' '
     +(data.method==='web_search'?'웹 검색 기반 선정':'AI 지식 기반 선정')
     +(data.generated_at?' · '+esc(data.generated_at)+' 생성':'')+'</p>';
-  dailyWrap.innerHTML=head+items.map(function(it){
+  dailyWrap.innerHTML=head+items.map(function(it,i){
     var p=Math.max(0,Math.min(100,it.percent|0));
     var vc=p>=55?'var(--hot)':(p>=45?'var(--ink-soft)':'var(--cold)');
     return '<article class="card">'
@@ -1087,9 +1128,194 @@ function renderDaily(data){
             +'<div class="bar"><i class="'+(gp<50?'cool':'')+'" style="width:'+gp+'%"></i></div>'
             +'<span class="val">'+gp+'%</span></div>';
         }).join('')+'</div>':'')
+      +(isToday
+        ? '<div class="vote"><div class="q">당신의 선택은? <span style="color:var(--ink-faint);font-weight:400">(오늘만 참여 가능)</span></div>'
+          +'<div class="dvote" data-idx="'+i+'">'
+          +'<button data-side="a">🔥 긍정 — 공감한다</button>'
+          +'<button data-side="b">🧊 부정 — 공감 안 된다</button></div>'
+          +'<div class="dv-login"></div><div class="dv-res"></div></div>'
+        : '<div class="vote-note">지난 논쟁은 열람만 가능합니다 — 투표는 ‘오늘’의 논쟁에서만 할 수 있어요.</div>')
       +'</article>';
   }).join('');
+  if(isToday){ bindDailyVotes(data.date); refreshMyVotes(data.date); }
 }
+
+/* ================= 논쟁 투표 (구글 로그인 필요, 오늘만) ================= */
+function markVote(wrap, side, counts){
+  wrap.querySelectorAll('button').forEach(function(x){x.classList.remove('sel-a','sel-b');});
+  var btn=wrap.querySelector('button[data-side="'+side+'"]');
+  if(btn) btn.classList.add(side==='a'?'sel-a':'sel-b');
+  var res=wrap.parentElement.querySelector('.dv-res');
+  var t=counts?(counts.a||0)+(counts.b||0):0;
+  res.innerHTML='내 선택: <b>'+(side==='a'?'긍정':'부정')+'</b>'
+    +(t?' · 지금까지 긍정 <b>'+(counts.a||0)+'</b> vs 부정 <b>'+(counts.b||0)+'</b> ('+t+'명 참여)':'')
+    +' <span style="color:var(--ink-faint)">— 다시 누르면 변경됩니다</span>';
+  res.style.display='block';
+  wrap.parentElement.querySelector('.dv-login').style.display='none';
+}
+function bindDailyVotes(date){
+  dailyWrap.querySelectorAll('.dvote button').forEach(function(b){
+    b.addEventListener('click', function(){
+      var wrap=b.closest('.dvote'), idx=+wrap.dataset.idx;
+      var lg=wrap.parentElement.querySelector('.dv-login');
+      if(!AUTH){
+        lg.innerHTML=GCID
+          ? '<b>구글 로그인이 필요해요</b> — 우측 상단의 구글 로그인 버튼으로 로그인하면 투표에 참여할 수 있습니다.'
+          : '<b>로그인 준비 중</b> — 구글 로그인이 설정되면 참여할 수 있습니다.';
+        lg.style.display='block';
+        return;
+      }
+      fetch('/api/vote',{method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH.token},
+        body:JSON.stringify({date:date, idx:idx, side:b.dataset.side})})
+      .then(function(r){ return r.json().then(function(d){ return {code:r.status, d:d}; }); })
+      .then(function(res){
+        if(res.code===401){
+          doLogout();
+          lg.innerHTML='<b>로그인이 만료됐어요</b> — 우측 상단에서 다시 로그인해 주세요.';
+          lg.style.display='block'; return;
+        }
+        if(res.code!==200){
+          lg.innerHTML='<b>참여 불가</b> — '+esc(res.d.message||'투표에 실패했습니다.');
+          lg.style.display='block'; return;
+        }
+        markVote(wrap, res.d.my, res.d.counts);
+      })
+      .catch(function(){ lg.innerHTML='<b>오류</b> — 서버에 연결할 수 없습니다.'; lg.style.display='block'; });
+    });
+  });
+}
+function refreshMyVotes(date){
+  if(!AUTH) return;
+  fetch('/api/votes/me?date='+encodeURIComponent(date),{headers:{'Authorization':'Bearer '+AUTH.token}})
+  .then(function(r){ return r.ok?r.json():null; })
+  .then(function(d){
+    if(!d) return;
+    Object.keys(d.votes||{}).forEach(function(k){
+      var wrap=dailyWrap.querySelector('.dvote[data-idx="'+k+'"]');
+      if(wrap) markVote(wrap, d.votes[k], (d.counts||{})[k]);
+    });
+  }).catch(function(){});
+}
+
+/* ================= 구글 로그인 ================= */
+var AUTH=null, GCID=null;
+try{ AUTH=JSON.parse(localStorage.getItem('mp_auth')||'null'); }catch(e){}
+if(AUTH && !AUTH.token) AUTH=null;
+var authArea=document.getElementById('authArea');
+function doLogout(){
+  AUTH=null; localStorage.removeItem('mp_auth');
+  if(window.google && google.accounts && google.accounts.id){ try{ google.accounts.id.disableAutoSelect(); }catch(e){} }
+  renderAuth();
+}
+function renderAuth(){
+  if(AUTH){
+    authArea.innerHTML=(AUTH.picture?'<img class="avatar" src="'+esc(AUTH.picture)+'" alt="" referrerpolicy="no-referrer">':'')
+      +'<span class="uname">'+esc(AUTH.name||'')+'</span>'
+      +'<button class="logout" id="logoutBtn">로그아웃</button>';
+    document.getElementById('logoutBtn').addEventListener('click', doLogout);
+  } else if(GCID){
+    authArea.innerHTML='<div id="gsiBtn"></div>';
+    tryRenderGsi(0);
+  } else {
+    authArea.innerHTML='';
+  }
+}
+function tryRenderGsi(n){
+  if(!(window.google && google.accounts && google.accounts.id)){
+    if(n<40) setTimeout(function(){ tryRenderGsi(n+1); }, 300);
+    return;
+  }
+  try{
+    google.accounts.id.initialize({client_id:GCID, callback:onGoogleCred});
+    var el=document.getElementById('gsiBtn');
+    if(el) google.accounts.id.renderButton(el, {theme:'outline', size:'medium', shape:'pill', text:'signin_with', locale:'ko'});
+  }catch(e){}
+}
+function onGoogleCred(resp){
+  fetch('/api/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({credential:resp.credential})})
+  .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+  .then(function(res){
+    if(!res.ok){ alert(res.d.message||'로그인에 실패했습니다.'); return; }
+    AUTH={token:res.d.token, name:res.d.name, picture:res.d.picture};
+    localStorage.setItem('mp_auth', JSON.stringify(AUTH));
+    renderAuth();
+    var sel=dateNav.querySelector('button.sel');
+    if(sel && sel.dataset.date===todayStr) refreshMyVotes(todayStr);
+  })
+  .catch(function(){ alert('로그인 처리 중 오류가 발생했습니다.'); });
+}
+fetch('/api/config').then(function(r){return r.json();})
+  .then(function(c){ GCID=c.google_client_id||null; renderAuth(); })
+  .catch(function(){ renderAuth(); });
+
+/* ================= 나는 어떤 사람일까 — 8각형 성향 분석 ================= */
+function radarSVG(axes){
+  var cx=160, cy=150, R=100, n=axes.length||8;
+  function pt(i, r){
+    var ang=-Math.PI/2 + i*2*Math.PI/n;
+    return [cx+r*Math.cos(ang), cy+r*Math.sin(ang)];
+  }
+  var rings=[25,50,75,100].map(function(rr){
+    var ps=[];
+    for(var i=0;i<n;i++){ ps.push(pt(i, R*rr/100).map(function(v){return v.toFixed(1);}).join(',')); }
+    return '<polygon points="'+ps.join(' ')+'" fill="none" stroke="var(--line)" stroke-width="1"/>';
+  }).join('');
+  var spokes='';
+  for(var i=0;i<n;i++){
+    var sp=pt(i,R);
+    spokes+='<line x1="'+cx+'" y1="'+cy+'" x2="'+sp[0].toFixed(1)+'" y2="'+sp[1].toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>';
+  }
+  var vals=[];
+  for(var i=0;i<n;i++){
+    var s=Math.max(0,Math.min(100,axes[i].score|0));
+    vals.push(pt(i, R*Math.max(s,4)/100).map(function(v){return v.toFixed(1);}).join(','));
+  }
+  var labels='';
+  for(var i=0;i<n;i++){
+    var lp=pt(i,R+20);
+    labels+='<text x="'+lp[0].toFixed(1)+'" y="'+(lp[1]+4).toFixed(1)+'" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink-soft)">'+esc(axes[i].label)+'</text>';
+  }
+  return '<svg width="320" height="300" viewBox="0 0 320 300" xmlns="http://www.w3.org/2000/svg" style="max-width:100%">'
+    +rings+spokes
+    +'<polygon points="'+vals.join(' ')+'" fill="var(--brand)" fill-opacity=".22" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round"/>'
+    +vals.map(function(v){ var xy=v.split(','); return '<circle cx="'+xy[0]+'" cy="'+xy[1]+'" r="3" fill="var(--brand)"/>'; }).join('')
+    +labels+'</svg>';
+}
+document.getElementById('profileBtn').addEventListener('click', function(){
+  sheetChip.style.display='none';
+  sheetTitle.textContent='나는 어떤 사람일까?';
+  if(!AUTH){
+    sheetBody.innerHTML='<div class="cm-empty"><b>구글 로그인이 필요해요</b><br><br>'
+      +(GCID
+        ? '우측 상단의 구글 로그인 버튼으로 로그인한 뒤,<br>오늘의 논쟁에 긍정/부정 투표를 <b>3건 이상</b> 하면<br>8각형 성향 분석을 볼 수 있습니다.'
+        : '구글 로그인이 설정되면 사용할 수 있는 기능입니다.')
+      +'</div>';
+    openSheet(); return;
+  }
+  sheetBody.innerHTML='<div class="cm-empty">🌡️ 투표 이력을 분석하고 있습니다… (최대 1분)</div>';
+  openSheet();
+  fetch('/api/profile/me',{headers:{'Authorization':'Bearer '+AUTH.token}})
+  .then(function(r){ return r.json().then(function(d){ return {code:r.status, d:d}; }); })
+  .then(function(res){
+    var d=res.d;
+    if(res.code===401){ doLogout(); sheetBody.innerHTML='<div class="cm-empty">로그인이 만료됐어요 — 다시 로그인해 주세요.</div>'; return; }
+    if(res.code!==200){ sheetBody.innerHTML='<div class="cm-empty">'+esc(d.message||'분석에 실패했습니다.')+'</div>'; return; }
+    if(d.status==='not_enough'){ sheetBody.innerHTML='<div class="cm-empty">'+esc(d.message||'')+'</div>'; return; }
+    var p=d.profile||{};
+    sheetBody.innerHTML='<div class="radar-wrap">'
+      +'<div class="persona">'+esc(p.persona||'')+'</div>'
+      +'<div class="p-count">투표 '+d.count+'건 기반 · AI 추정</div>'
+      +radarSVG(p.axes||[])
+      +'<p class="p-sum">'+esc(p.summary||'')+'</p>'
+      +'<ul class="axis-list">'+(p.axes||[]).map(function(a){
+          return '<li><span>'+esc(a.label)+'</span><span class="sc">'+a.score+'</span></li>';
+        }).join('')+'</ul>'
+      +'</div>';
+  })
+  .catch(function(){ sheetBody.innerHTML='<div class="cm-empty">서버에 연결할 수 없습니다.</div>'; });
+});
 
 /* ================= 카드 투표 ================= */
 var seeds={v1:{y:13,n:21}, v2:{y:19,n:14}, v3:{y:27,n:12}, v4:{y:3,n:31}, v5:{y:16,n:17}};
