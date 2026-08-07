@@ -111,15 +111,25 @@
   @keyframes bubUp{0%{opacity:0; transform:translateY(0)} 25%{opacity:1} 100%{opacity:0; transform:translateY(-26px)}}
   @media (prefers-reduced-motion: reduce){ .ask-loader .bub{animation:none; opacity:.6} }
 
-  /* ---------- history ---------- */
-  .hist-list{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:6px 16px}
-  .hist-item{display:flex; gap:10px; align-items:baseline; padding:10px 0; border-bottom:1px dotted var(--line); font-size:.85rem}
+  /* ---------- home 세로 중앙 배치 (구글식) ---------- */
+  #tab-home{display:flex; flex-direction:column; justify-content:center; min-height:calc(100vh - 330px)}
+  #tab-home .askbox{margin:0}
+
+  /* ---------- history (우측 하단 버튼 → 시트) ---------- */
+  .hist-link{
+    position:fixed; right:16px; bottom:16px; z-index:40;
+    border:1px solid var(--line); background:var(--surface); color:var(--ink-faint);
+    border-radius:99px; padding:8px 14px; font-size:.78rem; cursor:pointer; box-shadow:var(--shadow);
+  }
+  .hist-link:hover{color:var(--ink-soft); border-color:var(--ink-faint)}
+  .hist-link:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+  .hist-item{display:flex; gap:10px; align-items:baseline; padding:11px 2px; border-bottom:1px dotted var(--line); font-size:.87rem}
   .hist-item:last-child{border-bottom:0}
-  .hist-item .st{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .hist-item .lb{flex:none; font-size:.72rem; color:var(--ink-faint)}
+  .hist-item .st{flex:1; min-width:0}
+  .hist-item .lb{flex:none; font-size:.72rem; color:var(--ink-faint); text-align:right}
   .hist-item .pc{flex:none; font-weight:800; font-variant-numeric:tabular-nums}
   .hist-item .pc.hot{color:var(--hot)} .hist-item .pc.cold{color:var(--cold)} .hist-item .pc.mid{color:var(--ink-soft)}
-  .hist-empty{padding:18px 0; font-size:.85rem; color:var(--ink-faint); text-align:center}
+  .hist-empty{padding:22px 0; font-size:.87rem; color:var(--ink-faint); text-align:center}
 
   /* ---------- daily debates ---------- */
   .date-nav{display:flex; gap:7px; flex-wrap:wrap; margin:0 0 16px; padding:0 4px}
@@ -369,11 +379,7 @@
   <div class="ask-result" id="askResult"></div>
 </section>
 
-<div class="feed-label">
-  <h2>다른 사람들은 뭘 재봤을까</h2>
-  <span id="histMeta">최근 측정 히스토리</span>
-</div>
-<div class="hist-list" id="histList"><div class="hist-empty">불러오는 중…</div></div>
+<button class="hist-link" id="histLink">🕐 최근 측정 히스토리</button>
 
 </div><!-- /tab-home -->
 
@@ -760,7 +766,7 @@ function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g
 
 function showReader(id){
   var p=POSTS[id];
-  sheetChip.className='src-chip '+p.chipCls; sheetChip.textContent=p.chip;
+  sheetChip.style.display=''; sheetChip.className='src-chip '+p.chipCls; sheetChip.textContent=p.chip;
   sheetTitle.textContent='원글 읽기';
   var h='<div class="reader-meta">'+esc(p.meta)+'</div>'
    +'<h3 class="reader-title">'+esc(p.title)+'</h3>'
@@ -775,7 +781,7 @@ function showReader(id){
 
 function showComments(id){
   var p=POSTS[id];
-  sheetChip.className='src-chip '+p.chipCls; sheetChip.textContent=p.chip;
+  sheetChip.style.display=''; sheetChip.className='src-chip '+p.chipCls; sheetChip.textContent=p.chip;
   sheetTitle.textContent='실제 반응'+(p.comments? ' '+p.comments.length+'건':'');
   if(!p.comments){
     sheetBody.innerHTML='<div class="cm-empty">'+esc(p.cmEmpty)+'<br><br><a href="'+p.url+'" target="_blank" rel="noopener">출처에서 직접 보기 ↗</a></div>';
@@ -934,15 +940,13 @@ quizGo.addEventListener('click', function(){
     hideSteps();
     askRes.innerHTML=h; askRes.style.display='block'; askBtn.disabled=false;
     document.getElementById('askAgain').addEventListener('click', function(){ resetAsk(); askInput.focus(); });
-    loadHistory();
   })
   .catch(function(){ showError('서버에 연결할 수 없습니다.'); });
 });
 askBtn.addEventListener('click', runAsk);
 askInput.addEventListener('keydown', function(e){ if(e.key==='Enter') runAsk(); });
 
-/* ================= 측정 히스토리 ================= */
-var histList=document.getElementById('histList'), histMeta=document.getElementById('histMeta');
+/* ================= 측정 히스토리 (우측 하단 버튼 → 시트) ================= */
 function timeAgo(ts){
   var s=Math.max(0,(Date.now()/1000)-ts);
   if(s<60) return '방금';
@@ -950,27 +954,31 @@ function timeAgo(ts){
   if(s<86400) return Math.floor(s/3600)+'시간 전';
   return Math.floor(s/86400)+'일 전';
 }
-function loadHistory(){
+function openHistory(){
+  sheetChip.style.display='none';
+  sheetTitle.textContent='최근 측정 히스토리';
+  sheetBody.innerHTML='<div class="hist-empty">불러오는 중…</div>';
+  openSheet();
   fetch('/api/history').then(function(r){return r.json();}).then(function(d){
     var items=d.items||[];
     if(!items.length){
-      histList.innerHTML='<div class="hist-empty">아직 측정 기록이 없습니다 — 첫 번째로 재보세요!</div>';
+      sheetBody.innerHTML='<div class="hist-empty">아직 측정 기록이 없습니다 — 첫 번째로 재보세요!</div>';
       return;
     }
-    histMeta.textContent='최근 '+items.length+'건';
-    histList.innerHTML=items.map(function(it){
-      var p=Math.max(0,Math.min(100,it.percent|0));
-      var cls=p>=55?'hot':(p>=45?'mid':'cold');
-      return '<div class="hist-item">'
-        +'<span class="st" title="'+esc(it.story||'')+'">'+esc(it.story||'')+'</span>'
-        +'<span class="lb">'+esc(it.label?it.label+' · ':'')+timeAgo(it.ts)+'</span>'
-        +'<span class="pc '+cls+'">'+p+'%</span></div>';
-    }).join('');
+    sheetBody.innerHTML='<div class="cm-note" style="padding-top:0">다른 사람들이 최근에 재본 생각들 (최신 '+items.length+'건 · 사연은 100자까지 표시)</div>'
+      +items.map(function(it){
+        var p=Math.max(0,Math.min(100,it.percent|0));
+        var cls=p>=55?'hot':(p>=45?'mid':'cold');
+        return '<div class="hist-item">'
+          +'<span class="st">'+esc(it.story||'')+'</span>'
+          +'<span class="lb">'+(it.label?esc(it.label)+'<br>':'')+timeAgo(it.ts)+'</span>'
+          +'<span class="pc '+cls+'">'+p+'%</span></div>';
+      }).join('');
   }).catch(function(){
-    histList.innerHTML='<div class="hist-empty">히스토리를 불러오지 못했습니다.</div>';
+    sheetBody.innerHTML='<div class="hist-empty">히스토리를 불러오지 못했습니다.</div>';
   });
 }
-loadHistory();
+document.getElementById('histLink').addEventListener('click', openHistory);
 
 /* ================= 탭 ================= */
 var tabHome=document.getElementById('tab-home'), tabDebates=document.getElementById('tab-debates');
