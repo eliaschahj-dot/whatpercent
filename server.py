@@ -555,9 +555,30 @@ def sitemap():
     return Response(content=SITEMAP, media_type="application/xml")
 
 
+def _daily_scheduler():
+    """매일 밤 12시(KST) 직후 오늘의 논쟁을 미리 생성. 실패 시 15분 간격 최대 4회 재시도."""
+    while True:
+        now = datetime.now(KST)
+        nxt = now.replace(hour=0, minute=0, second=30, microsecond=0) + timedelta(days=1)
+        time.sleep(max(1.0, (nxt - now).total_seconds()))
+        for _ in range(4):
+            today = _kst_today()
+            if (DAILY_DIR / f"{today}.json").exists():
+                break
+            _kick_daily(today)
+            time.sleep(900)
+
+
+_scheduler_started = False
+
+
 @app.on_event("startup")
 def _startup():
+    global _scheduler_started
     _kick_daily(_kst_today())
+    if not _scheduler_started:
+        _scheduler_started = True
+        threading.Thread(target=_daily_scheduler, daemon=True).start()
 
 
 @app.get("/api/history")
