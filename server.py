@@ -579,8 +579,12 @@ def auth_google(body: GoogleAuthIn):
     try:
         from google.auth.transport import requests as g_requests
         from google.oauth2 import id_token as g_id_token
-        info = g_id_token.verify_oauth2_token(body.credential, g_requests.Request(), GOOGLE_CLIENT_ID)
-    except Exception:  # noqa: BLE001 — 만료·위조·클라이언트ID 불일치 등
+        info = g_id_token.verify_oauth2_token(
+            body.credential, g_requests.Request(), GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=10,
+        )
+    except Exception as e:  # noqa: BLE001 — 만료·위조·클라이언트ID 불일치 등
+        print(f"[auth] google verify failed: {type(e).__name__}: {e}", flush=True)
         return JSONResponse(status_code=401, content={
             "error": "invalid_token", "message": "구글 토큰 검증에 실패했습니다. 다시 로그인해 주세요."})
     uid = str(info["sub"])
