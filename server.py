@@ -921,6 +921,16 @@ def admin_page():
     return FileResponse(BASE / "admin.html")
 
 
+@app.get("/terms")
+def terms_page():
+    return FileResponse(BASE / "terms.html")
+
+
+@app.get("/privacy")
+def privacy_page():
+    return FileResponse(BASE / "privacy.html")
+
+
 @app.post("/api/auth/google")
 def auth_google(body: GoogleAuthIn):
     if not GOOGLE_CLIENT_ID:
