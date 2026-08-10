@@ -919,13 +919,18 @@ function showError(msg){
   document.getElementById('askAgain').addEventListener('click', function(){ resetAsk(); runAsk(); });
 }
 
+function apiHeaders(){
+  var h={'Content-Type':'application/json'};
+  if(AUTH) h['Authorization']='Bearer '+AUTH.token;
+  return h;
+}
 function runAsk(){
   if(askBtn.disabled) return;
   resetAsk(); askBtn.disabled=true;
   curStory=askInput.value.trim()||askInput.placeholder.replace(/^예: /,'');
   showSteps(['① AI가 사연을 읽고 있습니다',
              '② 유사 논쟁에서 여론이 갈린 조건을 분석 중… (30초 안팎 소요)']);
-  fetch('/api/questions',{method:'POST',headers:{'Content-Type':'application/json'},
+  fetch('/api/questions',{method:'POST',headers:apiHeaders(),
     body:JSON.stringify({story:curStory})})
   .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
   .then(function(res){
@@ -961,7 +966,7 @@ quizGo.addEventListener('click', function(){
   var qa=curQs.map(function(q,qi){ return {question:q.text, answer:q.options[answers[qi]]}; });
   quiz.style.display='none';
   showSteps(['③ 답변 반영 — AI가 커뮤니티 여론을 종합해 예측을 계산 중… (30초~1분 소요)']);
-  fetch('/api/predict',{method:'POST',headers:{'Content-Type':'application/json'},
+  fetch('/api/predict',{method:'POST',headers:apiHeaders(),
     body:JSON.stringify({story:curStory, answers:qa, topic_label:curLabel})})
   .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
   .then(function(res){
@@ -1047,6 +1052,7 @@ document.querySelectorAll('.topnav button').forEach(function(b){
       x.classList.remove('on'); x.setAttribute('aria-selected','false');
     });
     b.classList.add('on'); b.setAttribute('aria-selected','true');
+    track('tab',{tab:b.dataset.tab});
     var home=b.dataset.tab==='home';
     tabHome.style.display=home?'flex':'none';
     tabDebates.style.display=home?'none':'block';
@@ -1353,6 +1359,31 @@ document.querySelectorAll('.vote-btns').forEach(function(group){
     });
   });
 });
+
+/* ================= 방문 통계 수집 (익명, IP 미저장) ================= */
+var VID='anon';
+try{
+  VID=localStorage.getItem('mp_vid');
+  if(!VID){ VID=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('mp_vid',VID); }
+}catch(e){}
+var SID=Math.random().toString(36).slice(2), T0=Date.now();
+function track(ev, extra){
+  var payload=Object.assign({vid:VID, sid:SID, event:ev, dur:Math.round((Date.now()-T0)/1000)}, extra||{});
+  var body=JSON.stringify(payload);
+  try{
+    if(ev==='leave' && navigator.sendBeacon){
+      navigator.sendBeacon('/api/track', new Blob([body],{type:'application/json'}));
+      return;
+    }
+    fetch('/api/track',{method:'POST',headers:apiHeaders(),body:body,keepalive:ev==='leave'}).catch(function(){});
+  }catch(e){}
+}
+track('view',{ref:document.referrer||''});
+setInterval(function(){
+  if(!document.hidden && (Date.now()-T0)<1800000) track('hb');
+}, 30000);
+document.addEventListener('visibilitychange', function(){ if(document.hidden) track('leave'); });
+window.addEventListener('pagehide', function(){ track('leave'); });
 })();
 </script>
 </body></html>

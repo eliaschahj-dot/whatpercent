@@ -1,0 +1,183 @@
+<!doctype html><html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>몇프로 — 관리자</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  :root{
+    --bg:#F4F5F2; --surface:#FFFFFF; --surface2:#EDEFEA;
+    --ink:#22251F; --ink-soft:#5C6156; --ink-faint:#8B9083; --line:#DDE0D8;
+    --hot:#E8503A; --cold:#3A6BC9; --brand:#1F7A68; --brand-soft:#E3F0EC;
+    --radius:12px; --shadow:0 1px 2px rgba(30,35,25,.06), 0 8px 24px rgba(30,35,25,.07);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#15171A; --surface:#1E2126; --surface2:#262A30;
+      --ink:#E9EAE4; --ink-soft:#A9AEA1; --ink-faint:#787D71; --line:#33373D;
+      --hot:#F0664F; --cold:#6D95E0; --brand:#4BA891; --brand-soft:#1E2F2A;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35); }
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg); color:var(--ink); margin:0; padding:0 16px 60px;
+    font-family:"Pretendard Variable",Pretendard,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; line-height:1.55}
+  .wrap{max-width:960px; margin:0 auto}
+  header{display:flex; align-items:baseline; gap:10px; padding:26px 0 14px; flex-wrap:wrap}
+  header b{font-size:1.3rem; font-weight:800}
+  header b span{color:var(--hot)}
+  header .sub{color:var(--ink-faint); font-size:.85rem}
+  header .out{margin-left:auto; font-size:.8rem}
+  header .out button{border:0;background:none;color:var(--ink-faint);cursor:pointer;text-decoration:underline}
+
+  .gate{max-width:380px; margin:80px auto; background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:var(--shadow); padding:24px; text-align:center}
+  .gate input{width:100%; border:1px solid var(--line); border-radius:9px; padding:11px 13px; font:inherit;
+    background:var(--bg); color:var(--ink); margin:12px 0}
+  .gate button{width:100%; border:0; border-radius:9px; padding:11px; background:var(--brand); color:#fff;
+    font-weight:700; cursor:pointer; font:inherit}
+  .gate .err{color:var(--hot); font-size:.83rem; margin-top:10px}
+
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin:8px 0 20px}
+  .stat{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px}
+  .stat .n{font-size:1.5rem; font-weight:800; font-variant-numeric:tabular-nums}
+  .stat .l{font-size:.76rem; color:var(--ink-faint)}
+
+  section{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:16px; margin-bottom:18px}
+  section h2{margin:0 0 12px; font-size:.95rem}
+  .tblwrap{overflow-x:auto}
+  table{border-collapse:collapse; width:100%; font-size:.82rem; white-space:nowrap}
+  th{color:var(--ink-faint); font-weight:700; text-align:left; padding:6px 10px 6px 0; border-bottom:1px solid var(--line)}
+  td{padding:7px 10px 7px 0; border-bottom:1px dotted var(--line); vertical-align:top}
+  td.wrapcell{white-space:normal; min-width:220px; max-width:420px}
+  .num{font-variant-numeric:tabular-nums}
+  .pos{color:var(--hot); font-weight:700} .neg{color:var(--cold); font-weight:700}
+  .bar-row{display:grid; grid-template-columns:84px 1fr 90px; gap:10px; align-items:center; margin-bottom:5px; font-size:.8rem}
+  .bar{height:9px; border-radius:99px; background:var(--surface2); overflow:hidden}
+  .bar i{display:block; height:100%; background:var(--brand); border-radius:99px}
+  .muted{color:var(--ink-faint)}
+  .qa{color:var(--ink-faint); font-size:.76rem; margin-top:3px; white-space:normal}
+  .empty{color:var(--ink-faint); font-size:.85rem; padding:8px 0}
+</style>
+</head><body>
+<div class="wrap">
+<header>
+  <b>몇프로<span>%</span> 관리자</b><span class="sub" id="metaInfo"></span>
+  <span class="out" id="outArea"></span>
+</header>
+<div id="gate" class="gate" style="display:none">
+  <b>관리자 키 입력</b>
+  <p class="muted" style="font-size:.83rem">Render 환경변수 <code>ADMIN_KEY</code>에 설정한 값을 입력하세요.</p>
+  <input id="keyInput" type="password" placeholder="관리자 키">
+  <button id="keyGo">열기</button>
+  <div class="err" id="keyErr"></div>
+</div>
+<div id="dash" style="display:none">
+  <div class="cards" id="statCards"></div>
+  <section><h2>📈 일별 방문 (최근 14일)</h2><div id="dailyChart"></div>
+    <div class="tblwrap"><table id="dailyTbl"></table></div></section>
+  <section><h2>🔗 유입 경로 · 탭 이동</h2><div id="refs"></div></section>
+  <section><h2>👥 가입자 (구글 로그인)</h2><div class="tblwrap"><table id="usersTbl"></table></div></section>
+  <section><h2>🌡️ 측정(질문) 기록 — 최근 100건</h2><div class="tblwrap"><table id="measTbl"></table></div></section>
+  <section><h2>🗳️ 투표 기록 — 최근 200건</h2><div class="tblwrap"><table id="votesTbl"></table></div></section>
+</div>
+</div>
+<script>
+(function(){
+'use strict';
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmtTs(ts){ if(!ts) return '-'; var d=new Date(ts*1000);
+  return (d.getMonth()+1)+'.'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function fmtDur(s){ if(!s) return '0초'; if(s<60) return s+'초'; return Math.floor(s/60)+'분 '+(s%60)+'초'; }
+var gate=document.getElementById('gate'), dash=document.getElementById('dash'),
+    keyErr=document.getElementById('keyErr');
+var KEY=localStorage.getItem('mp_admin_key')||'';
+
+function showGate(msg){ gate.style.display='block'; dash.style.display='none'; keyErr.textContent=msg||''; }
+document.getElementById('keyGo').addEventListener('click', function(){
+  KEY=document.getElementById('keyInput').value.trim();
+  if(KEY){ localStorage.setItem('mp_admin_key', KEY); load(); }
+});
+document.getElementById('keyInput').addEventListener('keydown', function(e){
+  if(e.key==='Enter') document.getElementById('keyGo').click();
+});
+
+function load(){
+  fetch('/api/admin/dashboard?days=14',{headers:{'X-Admin-Key':KEY}})
+  .then(function(r){ return r.json().then(function(d){ return {code:r.status, d:d}; }); })
+  .then(function(res){
+    if(res.code!==200){ localStorage.removeItem('mp_admin_key'); showGate(res.d.message||'접근 실패'); return; }
+    render(res.d);
+  })
+  .catch(function(){ showGate('서버에 연결할 수 없습니다.'); });
+}
+
+function render(d){
+  gate.style.display='none'; dash.style.display='block';
+  document.getElementById('metaInfo').textContent='최근 '+d.days+'일 기준 · '+new Date().toLocaleString('ko-KR');
+  document.getElementById('outArea').innerHTML='<button id="lockBtn">잠그기</button>';
+  document.getElementById('lockBtn').addEventListener('click', function(){
+    localStorage.removeItem('mp_admin_key'); location.reload();
+  });
+  var t=d.totals;
+  document.getElementById('statCards').innerHTML=[
+    ['누적 페이지뷰', t.views], ['누적 방문자', t.visitors], ['가입자', t.users],
+    ['측정(질문)', t.measures], ['투표', t.votes]
+  ].map(function(c){ return '<div class="stat"><div class="n">'+c[1]+'</div><div class="l">'+c[0]+'</div></div>'; }).join('');
+
+  var mx=Math.max.apply(null, d.daily.map(function(x){return x.views;}).concat([1]));
+  document.getElementById('dailyChart').innerHTML=d.daily.map(function(x){
+    return '<div class="bar-row"><span class="muted">'+x.date.slice(5)+'</span>'
+      +'<div class="bar"><i style="width:'+Math.round(100*x.views/mx)+'%"></i></div>'
+      +'<span class="num">'+x.views+'뷰 · '+x.uniques+'명</span></div>';
+  }).join('')||'<div class="empty">아직 방문 데이터가 없습니다.</div>';
+  document.getElementById('dailyTbl').innerHTML=d.daily.length
+    ? '<tr><th>날짜</th><th>페이지뷰</th><th>방문자</th><th>세션</th><th>평균 체류</th></tr>'
+      +d.daily.slice().reverse().map(function(x){
+        return '<tr><td>'+x.date+'</td><td class="num">'+x.views+'</td><td class="num">'+x.uniques
+          +'</td><td class="num">'+x.sessions+'</td><td>'+fmtDur(x.avg_dur)+'</td></tr>';
+      }).join('')
+    : '';
+
+  var tabName={home:'온도 재보기', debates:'오늘의 논쟁'};
+  document.getElementById('refs').innerHTML=
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;min-width:0">'
+    +'<div><div class="muted" style="font-size:.78rem;margin-bottom:6px">유입 경로 (페이지뷰 기준)</div>'
+    +(d.refs.length? d.refs.map(function(r){ return '<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:3px 0;border-bottom:1px dotted var(--line)"><span>'+esc(r[0])+'</span><b class="num">'+r[1]+'</b></div>'; }).join(''):'<div class="empty">없음</div>')
+    +'</div><div><div class="muted" style="font-size:.78rem;margin-bottom:6px">탭 이동 횟수</div>'
+    +(Object.keys(d.tabs).length? Object.keys(d.tabs).map(function(k){ return '<div style="display:flex;justify-content:space-between;font-size:.82rem;padding:3px 0;border-bottom:1px dotted var(--line)"><span>'+esc(tabName[k]||k)+'</span><b class="num">'+d.tabs[k]+'</b></div>'; }).join(''):'<div class="empty">없음</div>')
+    +'</div></div>';
+
+  document.getElementById('usersTbl').innerHTML=d.users.length
+    ? '<tr><th>이름</th><th>이메일</th><th>가입</th><th>최근 로그인</th><th>로그인</th><th>투표</th><th>측정</th></tr>'
+      +d.users.map(function(u){
+        return '<tr><td>'+esc(u.name)+'</td><td>'+esc(u.email)+'</td><td>'+fmtTs(u.first_login)
+          +'</td><td>'+fmtTs(u.last_login)+'</td><td class="num">'+u.logins+'</td><td class="num">'+u.votes
+          +'</td><td class="num">'+u.measures+'</td></tr>';
+      }).join('')
+    : '<tr><td class="empty">아직 가입자가 없습니다.</td></tr>';
+
+  document.getElementById('measTbl').innerHTML=d.measures.length
+    ? '<tr><th>시각</th><th>질문(사연)</th><th>주제군</th><th>결과</th><th>사용자</th><th>IP해시</th></tr>'
+      +d.measures.map(function(m){
+        var qa=(m.answers||[]).map(function(x){return esc(x.q)+' → <b>'+esc(x.a)+'</b>';}).join(' · ');
+        return '<tr><td>'+fmtTs(m.ts)+'</td><td class="wrapcell">'+esc(m.story)
+          +(qa?'<div class="qa">'+qa+'</div>':'')+'</td><td>'+esc(m.label)
+          +'</td><td class="num"><b>'+m.percent+'%</b> '+esc(m.verdict)+'</td><td>'+esc(m.name||'비로그인')
+          +'</td><td class="muted">'+esc(m.ip)+'</td></tr>';
+      }).join('')
+    : '<tr><td class="empty">아직 측정 기록이 없습니다. (관리자 기능 배포 이후의 측정부터 기록됩니다)</td></tr>';
+
+  document.getElementById('votesTbl').innerHTML=d.votes.length
+    ? '<tr><th>시각</th><th>논쟁 날짜</th><th>논쟁</th><th>선택</th><th>사용자</th></tr>'
+      +d.votes.map(function(v){
+        return '<tr><td>'+fmtTs(v.ts)+'</td><td>'+esc(v.date)+'</td><td class="wrapcell">'+esc(v.title)
+          +'</td><td class="'+(v.side==='a'?'pos':'neg')+'">'+(v.side==='a'?'🔥 긍정':'🧊 부정')
+          +'</td><td>'+esc(v.name)+'</td></tr>';
+      }).join('')
+    : '<tr><td class="empty">아직 투표 기록이 없습니다.</td></tr>';
+}
+
+if(KEY) load(); else showGate();
+})();
+</script>
+</body></html>

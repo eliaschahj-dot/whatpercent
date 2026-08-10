@@ -176,6 +176,15 @@ class VoteIn(BaseModel):
     side: str  # "a"(긍정) | "b"(부정)
 
 
+class TrackIn(BaseModel):
+    vid: str = ""
+    sid: str = ""
+    event: str = ""
+    tab: str = ""
+    ref: str = ""
+    dur: int = 0
+
+
 QUESTIONS_SCHEMA = {
     "type": "object",
     "properties": {
@@ -297,6 +306,53 @@ def _read_history(limit: int = 30) -> list[dict]:
         if len(out) >= limit:
             break
     return out
+
+
+# ---------- 관리자·통계 데이터 수집 ----------
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
+EVENTS_FILE = DATA_DIR / "events.jsonl"
+USERS_FILE = DATA_DIR / "users.jsonl"
+MEASURES_FILE = DATA_DIR / "measures.jsonl"
+_stats_lock = threading.Lock()
+
+
+def _append_jsonl(path: Path, entry: dict, max_bytes: int = 15_000_000):
+    """JSONL append + 파일이 커지면 뒤쪽 절반만 유지."""
+    try:
+        with _stats_lock:
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            if path.stat().st_size > max_bytes:
+                lines = path.read_text(encoding="utf-8").splitlines()
+                path.write_text("\n".join(lines[len(lines) // 2:]) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    try:
+        with _stats_lock:
+            if not path.exists():
+                return []
+            lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _ip_hash(request: Request) -> str:
+    """원본 IP는 저장하지 않고 비밀키 솔트 해시 12자리만 보관."""
+    return hashlib.sha256(SESSION_SECRET + _client_ip(request).encode()).hexdigest()[:12]
+
+
+def _kst_date_of(ts: int) -> str:
+    return datetime.fromtimestamp(ts, KST).strftime("%Y-%m-%d")
 
 
 # ---------- 논쟁 투표 (구글 로그인 사용자, 오늘만) ----------
@@ -568,7 +624,7 @@ def favicon():
 
 @app.get("/robots.txt")
 def robots():
-    return PlainTextResponse("User-agent: *\nAllow: /\nSitemap: https://whatpercent.co.kr/sitemap.xml\n")
+    return PlainTextResponse("User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: https://whatpercent.co.kr/sitemap.xml\n")
 
 
 @app.get("/sitemap.xml")
@@ -612,6 +668,143 @@ def config():
     return {"google_client_id": GOOGLE_CLIENT_ID or None}
 
 
+@app.post("/api/track", status_code=204)
+def track(body: TrackIn, request: Request):
+    if body.event not in ("view", "tab", "leave", "hb"):
+        return Response(status_code=204)
+    user = _auth_user(request)
+    entry = {
+        "ts": int(time.time()),
+        "vid": body.vid[:40], "sid": body.sid[:40], "event": body.event,
+        "ip": _ip_hash(request),
+        "dur": max(0, min(86400, body.dur)),
+    }
+    if body.event == "view":
+        entry["ref"] = body.ref[:200]
+        entry["ua"] = request.headers.get("user-agent", "")[:120]
+    if body.event == "tab":
+        entry["tab"] = body.tab[:20]
+    if user:
+        entry["uid"] = user["u"]
+    _append_jsonl(EVENTS_FILE, entry)
+    return Response(status_code=204)
+
+
+def _admin_guard(request: Request):
+    if not ADMIN_KEY:
+        return JSONResponse(status_code=503, content={
+            "error": "not_configured",
+            "message": "관리자 키가 설정되지 않았습니다. Render 환경변수 ADMIN_KEY를 추가하세요."})
+    if not hmac.compare_digest(request.headers.get("x-admin-key", ""), ADMIN_KEY):
+        return JSONResponse(status_code=401, content={"error": "unauthorized", "message": "관리자 키가 올바르지 않습니다."})
+    return None
+
+
+@app.get("/api/admin/dashboard")
+def admin_dashboard(request: Request, days: int = 14):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    days = max(1, min(90, days))
+    now = int(time.time())
+    since = now - days * 86400
+
+    events = _read_jsonl(EVENTS_FILE)
+    recent = [e for e in events if e.get("ts", 0) >= since]
+    daily: dict[str, dict] = {}
+    refs: dict[str, int] = {}
+    tabs: dict[str, int] = {}
+    sess_dur: dict[str, dict[str, int]] = {}
+    for e in recent:
+        d = _kst_date_of(e["ts"])
+        day = daily.setdefault(d, {"views": 0, "uniq": set()})
+        if e.get("vid"):
+            day["uniq"].add(e["vid"])
+        if e["event"] == "view":
+            day["views"] += 1
+            r = (e.get("ref") or "").strip()
+            if r:
+                r = r.split("//")[-1].split("/")[0][:60]
+            refs[r or "직접 방문"] = refs.get(r or "직접 방문", 0) + 1
+        elif e["event"] == "tab":
+            tabs[e.get("tab", "?")] = tabs.get(e.get("tab", "?"), 0) + 1
+        sd = sess_dur.setdefault(d, {})
+        sid = e.get("sid", "")
+        if sid:
+            sd[sid] = max(sd.get(sid, 0), e.get("dur", 0))
+    daily_out = []
+    for d in sorted(daily):
+        durs = list(sess_dur.get(d, {}).values())
+        daily_out.append({
+            "date": d, "views": daily[d]["views"], "uniques": len(daily[d]["uniq"]),
+            "sessions": len(durs),
+            "avg_dur": int(sum(durs) / len(durs)) if durs else 0,
+        })
+
+    users_raw = _read_jsonl(USERS_FILE)
+    votes_all = _read_all_votes()
+    eff_votes = list(_effective_votes(votes_all).values())
+    measures = _read_jsonl(MEASURES_FILE)
+    vote_by_uid: dict[str, int] = {}
+    for v in eff_votes:
+        vote_by_uid[v.get("uid", "")] = vote_by_uid.get(v.get("uid", ""), 0) + 1
+    meas_by_uid: dict[str, int] = {}
+    for m in measures:
+        if m.get("uid"):
+            meas_by_uid[m["uid"]] = meas_by_uid.get(m["uid"], 0) + 1
+    users: dict[str, dict] = {}
+    for u in users_raw:
+        rec = users.setdefault(u["uid"], {
+            "uid": u["uid"], "name": u.get("name", ""), "email": u.get("email", ""),
+            "first_login": u["ts"], "last_login": u["ts"], "logins": 0,
+        })
+        rec["logins"] += 1
+        rec["last_login"] = max(rec["last_login"], u["ts"])
+        rec["first_login"] = min(rec["first_login"], u["ts"])
+        rec["name"] = u.get("name", rec["name"])
+    users_out = sorted(users.values(), key=lambda r: -r["last_login"])
+    for r in users_out:
+        r["votes"] = vote_by_uid.get(r["uid"], 0)
+        r["measures"] = meas_by_uid.get(r["uid"], 0)
+
+    name_by_uid = {r["uid"]: r["name"] for r in users_out}
+    votes_out = [{
+        "ts": v.get("ts", 0), "date": v.get("date", ""), "idx": v.get("idx", 0),
+        "side": v.get("side", ""), "title": v.get("title", ""),
+        "name": name_by_uid.get(v.get("uid", ""), "(알 수 없음)"),
+    } for v in sorted(eff_votes, key=lambda v: -v.get("ts", 0))[:200]]
+
+    measures_out = [{
+        "ts": m.get("ts", 0), "story": m.get("story", ""), "label": m.get("label", ""),
+        "percent": m.get("percent", 0), "verdict": m.get("verdict", ""),
+        "name": m.get("name", ""), "ip": m.get("ip", ""),
+        "answers": m.get("answers", []),
+    } for m in sorted(measures, key=lambda m: -m.get("ts", 0))[:100]]
+
+    all_view = [e for e in events if e.get("event") == "view"]
+    return {
+        "days": days,
+        "daily": daily_out,
+        "refs": sorted(refs.items(), key=lambda kv: -kv[1])[:12],
+        "tabs": tabs,
+        "users": users_out,
+        "votes": votes_out,
+        "measures": measures_out,
+        "totals": {
+            "views": len(all_view),
+            "visitors": len({e.get("vid") for e in events if e.get("vid")}),
+            "users": len(users_out),
+            "measures": len(measures),
+            "votes": len(eff_votes),
+        },
+    }
+
+
+@app.get("/admin")
+def admin_page():
+    return FileResponse(BASE / "admin.html")
+
+
 @app.post("/api/auth/google")
 def auth_google(body: GoogleAuthIn):
     if not GOOGLE_CLIENT_ID:
@@ -632,6 +825,10 @@ def auth_google(body: GoogleAuthIn):
     uid = str(info["sub"])
     name = info.get("name") or (info.get("email") or "사용자").split("@")[0]
     picture = info.get("picture", "")
+    _append_jsonl(USERS_FILE, {
+        "uid": uid, "name": name[:40], "email": (info.get("email") or "")[:80],
+        "picture": picture[:300], "ts": int(time.time()),
+    })
     return {"token": _make_token(uid, name, picture), "name": name, "picture": picture}
 
 
@@ -832,6 +1029,15 @@ def predict(body: PredictIn, request: Request):
             "label": body.topic_label.strip()[:40],
             "percent": data["percent"],
             "verdict": str(data.get("verdict", ""))[:20],
+        })
+        _user = _auth_user(request)
+        _append_jsonl(MEASURES_FILE, {
+            "ts": int(time.time()), "ip": _ip_hash(request),
+            "uid": _user["u"] if _user else "", "name": _user["n"] if _user else "",
+            "story": body.story.strip(),
+            "answers": [{"q": a.question[:200], "a": a.answer[:100]} for a in body.answers[:8]],
+            "label": body.topic_label.strip()[:40],
+            "percent": data["percent"], "verdict": str(data.get("verdict", ""))[:20],
         })
         return data
     except anthropic.AuthenticationError:
