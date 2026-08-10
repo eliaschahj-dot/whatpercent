@@ -57,6 +57,23 @@
   .muted{color:var(--ink-faint)}
   .qa{color:var(--ink-faint); font-size:.76rem; margin-top:3px; white-space:normal}
   .empty{color:var(--ink-faint); font-size:.85rem; padding:8px 0}
+  .dl-row{display:flex; gap:8px; flex-wrap:wrap}
+  .dl-row button{border:1px solid var(--line); background:var(--surface2); color:var(--ink);
+    border-radius:9px; padding:8px 14px; font-size:.82rem; font-weight:700; cursor:pointer; font:inherit}
+  .dl-row button:hover{border-color:var(--ink-faint)}
+  .urow{cursor:pointer}
+  .urow:hover td{background:var(--surface2)}
+  #userDetail{margin-top:14px; border-top:2px solid var(--brand); padding-top:14px}
+  .ud-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:8px}
+  .ud-head b{font-size:1rem}
+  .ud-head .x{margin-left:auto; border:0; background:none; color:var(--ink-faint); cursor:pointer; text-decoration:underline; font-size:.78rem}
+  .ud-grid{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+  @media(max-width:720px){ .ud-grid{grid-template-columns:1fr} }
+  .persona-box{text-align:center}
+  .persona-box .pn{font-size:1.05rem; font-weight:800; margin:4px 0}
+  .persona-box .ps{font-size:.82rem; color:var(--ink-soft); text-align:left; margin-top:8px}
+  .an-btn{border:1px dashed var(--brand); background:var(--brand-soft); color:var(--brand);
+    border-radius:9px; padding:8px 14px; font-size:.8rem; font-weight:700; cursor:pointer; font:inherit; margin-top:8px}
 </style>
 </head><body>
 <div class="wrap">
@@ -73,12 +90,21 @@
 </div>
 <div id="dash" style="display:none">
   <div class="cards" id="statCards"></div>
-  <section><h2>📈 일별 방문 (최근 14일)</h2><div id="dailyChart"></div>
-    <div class="tblwrap"><table id="dailyTbl"></table></div></section>
-  <section><h2>🔗 유입 경로 · 탭 이동</h2><div id="refs"></div></section>
-  <section><h2>👥 가입자 (구글 로그인)</h2><div class="tblwrap"><table id="usersTbl"></table></div></section>
-  <section><h2>🌡️ 측정(질문) 기록 — 최근 100건</h2><div class="tblwrap"><table id="measTbl"></table></div></section>
-  <section><h2>🗳️ 투표 기록 — 최근 200건</h2><div class="tblwrap"><table id="votesTbl"></table></div></section>
+  <section><h2>💾 데이터 다운로드 (CSV — 전체 기간, 삭제 없이 영구 보관)</h2>
+    <div class="dl-row">
+      <button data-dl="daily">일별 방문</button>
+      <button data-dl="users">가입자</button>
+      <button data-dl="measures">측정(질문) 전체</button>
+      <button data-dl="votes">투표 전체</button>
+    </div></section>
+  <section><h2>📈 일별 방문 (전체 기간)</h2><div id="dailyChart"></div>
+    <div class="tblwrap" style="max-height:280px;overflow-y:auto"><table id="dailyTbl"></table></div></section>
+  <section><h2>🔗 유입 경로 · 탭 이동 (전체 기간)</h2><div id="refs"></div></section>
+  <section><h2>👥 가입자 (구글 로그인) — 이름을 누르면 투표 이력·페르소나 상세</h2>
+    <div class="tblwrap"><table id="usersTbl"></table></div>
+    <div id="userDetail" style="display:none"></div></section>
+  <section><h2 id="measTitle">🌡️ 측정(질문) 기록</h2><div class="tblwrap"><table id="measTbl"></table></div></section>
+  <section><h2 id="votesTitle">🗳️ 투표 기록</h2><div class="tblwrap"><table id="votesTbl"></table></div></section>
 </div>
 </div>
 <script>
@@ -102,7 +128,7 @@ document.getElementById('keyInput').addEventListener('keydown', function(e){
 });
 
 function load(){
-  fetch('/api/admin/dashboard?days=14',{headers:{'X-Admin-Key':KEY}})
+  fetch('/api/admin/dashboard',{headers:{'X-Admin-Key':KEY}})
   .then(function(r){ return r.json().then(function(d){ return {code:r.status, d:d}; }); })
   .then(function(res){
     if(res.code!==200){ localStorage.removeItem('mp_admin_key'); showGate(res.d.message||'접근 실패'); return; }
@@ -113,7 +139,7 @@ function load(){
 
 function render(d){
   gate.style.display='none'; dash.style.display='block';
-  document.getElementById('metaInfo').textContent='최근 '+d.days+'일 기준 · '+new Date().toLocaleString('ko-KR');
+  document.getElementById('metaInfo').textContent='전체 기간 · '+new Date().toLocaleString('ko-KR');
   document.getElementById('outArea').innerHTML='<button id="lockBtn">잠그기</button>';
   document.getElementById('lockBtn').addEventListener('click', function(){
     localStorage.removeItem('mp_admin_key'); location.reload();
@@ -124,8 +150,9 @@ function render(d){
     ['측정(질문)', t.measures], ['투표', t.votes]
   ].map(function(c){ return '<div class="stat"><div class="n">'+c[1]+'</div><div class="l">'+c[0]+'</div></div>'; }).join('');
 
-  var mx=Math.max.apply(null, d.daily.map(function(x){return x.views;}).concat([1]));
-  document.getElementById('dailyChart').innerHTML=d.daily.map(function(x){
+  var chartDays=d.daily.slice(-30);
+  var mx=Math.max.apply(null, chartDays.map(function(x){return x.views;}).concat([1]));
+  document.getElementById('dailyChart').innerHTML=chartDays.map(function(x){
     return '<div class="bar-row"><span class="muted">'+x.date.slice(5)+'</span>'
       +'<div class="bar"><i style="width:'+Math.round(100*x.views/mx)+'%"></i></div>'
       +'<span class="num">'+x.views+'뷰 · '+x.uniques+'명</span></div>';
@@ -148,13 +175,19 @@ function render(d){
     +'</div></div>';
 
   document.getElementById('usersTbl').innerHTML=d.users.length
-    ? '<tr><th>이름</th><th>이메일</th><th>가입</th><th>최근 로그인</th><th>로그인</th><th>투표</th><th>측정</th></tr>'
+    ? '<tr><th>이름</th><th>이메일</th><th>페르소나</th><th>가입</th><th>최근 로그인</th><th>로그인</th><th>투표</th><th>측정</th></tr>'
       +d.users.map(function(u){
-        return '<tr><td>'+esc(u.name)+'</td><td>'+esc(u.email)+'</td><td>'+fmtTs(u.first_login)
+        return '<tr class="urow" data-uid="'+esc(u.uid)+'"><td><b>'+esc(u.name)+'</b></td><td>'+esc(u.email)
+          +'</td><td>'+(u.persona?esc(u.persona):'<span class="muted">-</span>')+'</td><td>'+fmtTs(u.first_login)
           +'</td><td>'+fmtTs(u.last_login)+'</td><td class="num">'+u.logins+'</td><td class="num">'+u.votes
           +'</td><td class="num">'+u.measures+'</td></tr>';
       }).join('')
     : '<tr><td class="empty">아직 가입자가 없습니다.</td></tr>';
+  document.querySelectorAll('#usersTbl .urow').forEach(function(tr){
+    tr.addEventListener('click', function(){ loadUser(tr.dataset.uid); });
+  });
+  document.getElementById('measTitle').textContent='🌡️ 측정(질문) 기록 — 전체 '+d.totals.measures+'건 저장 · 최근 '+d.measures.length+'건 표시';
+  document.getElementById('votesTitle').textContent='🗳️ 투표 기록 — 전체 '+d.totals.votes+'건 저장 · 최근 '+d.votes.length+'건 표시';
 
   document.getElementById('measTbl').innerHTML=d.measures.length
     ? '<tr><th>시각</th><th>질문(사연)</th><th>주제군</th><th>결과</th><th>사용자</th><th>IP해시</th></tr>'
@@ -175,6 +208,96 @@ function render(d){
           +'</td><td>'+esc(v.name)+'</td></tr>';
       }).join('')
     : '<tr><td class="empty">아직 투표 기록이 없습니다.</td></tr>';
+}
+
+/* ---------- CSV 다운로드 ---------- */
+document.querySelectorAll('.dl-row button').forEach(function(b){
+  b.addEventListener('click', function(){
+    fetch('/api/admin/export/'+b.dataset.dl,{headers:{'X-Admin-Key':KEY}})
+    .then(function(r){ if(!r.ok) throw 0; return r.blob(); })
+    .then(function(blob){
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='whatpercent-'+b.dataset.dl+'.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+    })
+    .catch(function(){ alert('다운로드 실패'); });
+  });
+});
+
+/* ---------- 가입자 상세: 투표 이력 + 페르소나 ---------- */
+function radarSVG(axes){
+  var cx=140, cy=130, R=85, n=axes.length||8;
+  function pt(i, r){ var ang=-Math.PI/2 + i*2*Math.PI/n; return [cx+r*Math.cos(ang), cy+r*Math.sin(ang)]; }
+  var rings=[25,50,75,100].map(function(rr){
+    var ps=[]; for(var i=0;i<n;i++){ ps.push(pt(i, R*rr/100).map(function(v){return v.toFixed(1);}).join(',')); }
+    return '<polygon points="'+ps.join(' ')+'" fill="none" stroke="var(--line)" stroke-width="1"/>';
+  }).join('');
+  var spokes=''; for(var i=0;i<n;i++){ var sp=pt(i,R);
+    spokes+='<line x1="'+cx+'" y1="'+cy+'" x2="'+sp[0].toFixed(1)+'" y2="'+sp[1].toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>'; }
+  var vals=[]; for(var i=0;i<n;i++){ var s=Math.max(0,Math.min(100,axes[i].score|0));
+    vals.push(pt(i, R*Math.max(s,4)/100).map(function(v){return v.toFixed(1);}).join(',')); }
+  var labels=''; for(var i=0;i<n;i++){ var lp=pt(i,R+17);
+    labels+='<text x="'+lp[0].toFixed(1)+'" y="'+(lp[1]+4).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink-soft)">'+esc(axes[i].label)+'</text>'; }
+  return '<svg width="280" height="260" viewBox="0 0 280 260" style="max-width:100%">'+rings+spokes
+    +'<polygon points="'+vals.join(' ')+'" fill="var(--brand)" fill-opacity=".22" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round"/>'
+    +labels+'</svg>';
+}
+function loadUser(uid){
+  var box=document.getElementById('userDetail');
+  box.style.display='block';
+  box.innerHTML='<div class="empty">불러오는 중…</div>';
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+  fetch('/api/admin/user/'+encodeURIComponent(uid),{headers:{'X-Admin-Key':KEY}})
+  .then(function(r){ return r.json(); })
+  .then(function(d){ renderUser(uid, d); })
+  .catch(function(){ box.innerHTML='<div class="empty">불러오기 실패</div>'; });
+}
+function renderUser(uid, d){
+  var box=document.getElementById('userDetail');
+  var u=d.user||{};
+  var votesHtml=d.votes.length
+    ? '<table><tr><th>시각</th><th>논쟁</th><th>선택</th></tr>'
+      +d.votes.map(function(v){
+        return '<tr><td>'+fmtTs(v.ts)+'</td><td class="wrapcell">'+esc(v.title)
+          +'<div class="qa">'+esc(v.side_text||'')+'</div></td>'
+          +'<td class="'+(v.side==='a'?'pos':'neg')+'">'+(v.side==='a'?'🔥 긍정':'🧊 부정')+'</td></tr>';
+      }).join('')+'</table>'
+    : '<div class="empty">투표 기록 없음</div>';
+  var measHtml=d.measures.length
+    ? '<div class="muted" style="font-size:.78rem;margin:12px 0 4px">이 사용자의 측정(질문)</div>'
+      +'<table><tr><th>시각</th><th>사연</th><th>결과</th></tr>'
+      +d.measures.map(function(m){
+        return '<tr><td>'+fmtTs(m.ts)+'</td><td class="wrapcell">'+esc(m.story)+'</td><td class="num"><b>'+m.percent+'%</b></td></tr>';
+      }).join('')+'</table>'
+    : '';
+  var p=d.profile&&d.profile.profile;
+  var personaHtml=p
+    ? '<div class="persona-box">'+radarSVG(p.axes||[])
+      +'<div class="pn">'+esc(p.persona||'')+'</div>'
+      +'<div class="muted" style="font-size:.75rem">투표 '+(d.profile.count||0)+'건 기반 · '+esc(d.profile.updated_at||'')+' 계산</div>'
+      +'<div class="ps">'+esc(p.summary||'')+'</div>'
+      +'<button class="an-btn" id="reAnalyze">🔄 최신 투표로 재분석 (AI 호출)</button></div>'
+    : '<div class="persona-box"><div class="empty">아직 페르소나 분석 전입니다.</div>'
+      +'<button class="an-btn" id="reAnalyze">🎯 페르소나 분석 실행 (AI 호출, 투표 3건 이상 필요)</button></div>';
+  box.innerHTML='<div class="ud-head"><b>'+esc(u.name)+'</b><span class="muted">'+esc(u.email)+'</span>'
+    +'<span class="muted">가입 '+fmtTs(u.first_login)+' · 로그인 '+u.logins+'회</span>'
+    +'<button class="x" id="udClose">닫기 ✕</button></div>'
+    +'<div class="ud-grid"><div><div class="muted" style="font-size:.78rem;margin-bottom:4px">투표 이력 ('+d.votes.length+'건)</div>'
+    +'<div class="tblwrap" style="max-height:340px;overflow-y:auto">'+votesHtml+'</div>'+measHtml+'</div>'
+    +'<div>'+personaHtml+'</div></div>';
+  document.getElementById('udClose').addEventListener('click', function(){ box.style.display='none'; });
+  document.getElementById('reAnalyze').addEventListener('click', function(){
+    var btn=document.getElementById('reAnalyze');
+    btn.disabled=true; btn.textContent='🌡️ 분석 중… (최대 1분)';
+    fetch('/api/admin/user/'+encodeURIComponent(uid)+'/analyze',{method:'POST',headers:{'X-Admin-Key':KEY}})
+    .then(function(r){ return r.json().then(function(d2){ return {code:r.status, d:d2}; }); })
+    .then(function(res){
+      if(res.code!==200){ btn.disabled=false; btn.textContent='분석 실패 — '+(res.d.message||'')+' (다시 시도)'; return; }
+      loadUser(uid);
+    })
+    .catch(function(){ btn.disabled=false; btn.textContent='서버 오류 — 다시 시도'; });
+  });
 }
 
 if(KEY) load(); else showGate();

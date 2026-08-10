@@ -310,23 +310,34 @@ def _read_history(limit: int = 30) -> list[dict]:
 
 # ---------- 관리자·통계 데이터 수집 ----------
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
-EVENTS_FILE = DATA_DIR / "events.jsonl"
+EVENTS_FILE = DATA_DIR / "events.jsonl"  # 초기 버전 파일 — 읽기 시 포함 (이후는 월별 로테이션)
+EVENTS_DIR = DATA_DIR / "events"
 USERS_FILE = DATA_DIR / "users.jsonl"
 MEASURES_FILE = DATA_DIR / "measures.jsonl"
+EVENTS_DIR.mkdir(parents=True, exist_ok=True)
 _stats_lock = threading.Lock()
 
 
-def _append_jsonl(path: Path, entry: dict, max_bytes: int = 15_000_000):
-    """JSONL append + 파일이 커지면 뒤쪽 절반만 유지."""
+def _append_jsonl(path: Path, entry: dict):
+    """JSONL append — 데이터는 삭제하지 않고 전부 보관한다."""
     try:
         with _stats_lock:
             with path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            if path.stat().st_size > max_bytes:
-                lines = path.read_text(encoding="utf-8").splitlines()
-                path.write_text("\n".join(lines[len(lines) // 2:]) + "\n", encoding="utf-8")
     except OSError:
         pass
+
+
+def _events_file_now() -> Path:
+    """방문 이벤트는 월별 파일로 로테이션해 영구 보관 (예: events/2026-08.jsonl)."""
+    return EVENTS_DIR / (datetime.now(KST).strftime("%Y-%m") + ".jsonl")
+
+
+def _read_all_events() -> list[dict]:
+    out = _read_jsonl(EVENTS_FILE)
+    for p in sorted(EVENTS_DIR.glob("????-??.jsonl")):
+        out.extend(_read_jsonl(p))
+    return out
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -686,7 +697,7 @@ def track(body: TrackIn, request: Request):
         entry["tab"] = body.tab[:20]
     if user:
         entry["uid"] = user["u"]
-    _append_jsonl(EVENTS_FILE, entry)
+    _append_jsonl(_events_file_now(), entry)
     return Response(status_code=204)
 
 
@@ -701,21 +712,17 @@ def _admin_guard(request: Request):
 
 
 @app.get("/api/admin/dashboard")
-def admin_dashboard(request: Request, days: int = 14):
+def admin_dashboard(request: Request):
     guard = _admin_guard(request)
     if guard:
         return guard
-    days = max(1, min(90, days))
-    now = int(time.time())
-    since = now - days * 86400
 
-    events = _read_jsonl(EVENTS_FILE)
-    recent = [e for e in events if e.get("ts", 0) >= since]
+    events = _read_all_events()
     daily: dict[str, dict] = {}
     refs: dict[str, int] = {}
     tabs: dict[str, int] = {}
     sess_dur: dict[str, dict[str, int]] = {}
-    for e in recent:
+    for e in events:
         d = _kst_date_of(e["ts"])
         day = daily.setdefault(d, {"views": 0, "uniq": set()})
         if e.get("vid"):
@@ -779,13 +786,17 @@ def admin_dashboard(request: Request, days: int = 14):
         "percent": m.get("percent", 0), "verdict": m.get("verdict", ""),
         "name": m.get("name", ""), "ip": m.get("ip", ""),
         "answers": m.get("answers", []),
-    } for m in sorted(measures, key=lambda m: -m.get("ts", 0))[:100]]
+    } for m in sorted(measures, key=lambda m: -m.get("ts", 0))[:200]]
+
+    # 페르소나 캐시 보유 여부를 가입자 목록에 표시
+    for r in users_out:
+        pc = _read_profile_cache(r["uid"])
+        r["persona"] = (pc or {}).get("profile", {}).get("persona", "")
 
     all_view = [e for e in events if e.get("event") == "view"]
     return {
-        "days": days,
         "daily": daily_out,
-        "refs": sorted(refs.items(), key=lambda kv: -kv[1])[:12],
+        "refs": sorted(refs.items(), key=lambda kv: -kv[1])[:15],
         "tabs": tabs,
         "users": users_out,
         "votes": votes_out,
@@ -798,6 +809,111 @@ def admin_dashboard(request: Request, days: int = 14):
             "votes": len(eff_votes),
         },
     }
+
+
+@app.get("/api/admin/user/{uid}")
+def admin_user_detail(uid: str, request: Request):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    users_raw = [u for u in _read_jsonl(USERS_FILE) if u.get("uid") == uid]
+    if not users_raw:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    info = {
+        "uid": uid,
+        "name": users_raw[-1].get("name", ""),
+        "email": users_raw[-1].get("email", ""),
+        "first_login": min(u["ts"] for u in users_raw),
+        "last_login": max(u["ts"] for u in users_raw),
+        "logins": len(users_raw),
+    }
+    votes = sorted(_my_vote_list(uid), key=lambda v: -v.get("ts", 0))
+    measures = [m for m in _read_jsonl(MEASURES_FILE) if m.get("uid") == uid]
+    measures.sort(key=lambda m: -m.get("ts", 0))
+    cached = _read_profile_cache(uid)
+    return {
+        "user": info,
+        "votes": [{"ts": v.get("ts", 0), "date": v.get("date", ""), "title": v.get("title", ""),
+                   "side": v.get("side", ""), "side_text": v.get("side_text", "")} for v in votes],
+        "measures": [{"ts": m.get("ts", 0), "story": m.get("story", ""),
+                      "percent": m.get("percent", 0), "verdict": m.get("verdict", "")} for m in measures[:50]],
+        "profile": cached,
+    }
+
+
+@app.post("/api/admin/user/{uid}/analyze")
+def admin_user_analyze(uid: str, request: Request):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    n = len(_my_vote_list(uid))
+    if n < 3:
+        return JSONResponse(status_code=400, content={
+            "error": "not_enough", "message": f"투표가 {n}건뿐입니다. 3건 이상이어야 분석할 수 있습니다."})
+    users_raw = [u for u in _read_jsonl(USERS_FILE) if u.get("uid") == uid]
+    name = users_raw[-1].get("name", "") if users_raw else ""
+    try:
+        cached = _compute_profile(uid, name)
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse(status_code=502, content={"error": "ai", "message": str(e)})
+    return {"status": "ok", "profile": cached}
+
+
+@app.get("/api/admin/export/{kind}")
+def admin_export(kind: str, request: Request):
+    guard = _admin_guard(request)
+    if guard:
+        return guard
+    import csv
+    import io
+
+    def _iso(ts):
+        return datetime.fromtimestamp(ts, KST).strftime("%Y-%m-%d %H:%M:%S") if ts else ""
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    if kind == "measures":
+        w.writerow(["시각", "사용자", "uid", "IP해시", "사연", "추가답변", "주제군", "공감률", "판정"])
+        for m in _read_jsonl(MEASURES_FILE):
+            qa = " | ".join(f"{a.get('q', '')} → {a.get('a', '')}" for a in m.get("answers", []))
+            w.writerow([_iso(m.get("ts", 0)), m.get("name", ""), m.get("uid", ""), m.get("ip", ""),
+                        m.get("story", ""), qa, m.get("label", ""), m.get("percent", 0), m.get("verdict", "")])
+    elif kind == "votes":
+        w.writerow(["시각", "논쟁날짜", "항목", "선택", "논쟁제목", "선택입장", "uid"])
+        for v in sorted(_read_all_votes(), key=lambda v: v.get("ts", 0)):
+            w.writerow([_iso(v.get("ts", 0)), v.get("date", ""), v.get("idx", 0),
+                        "긍정" if v.get("side") == "a" else "부정",
+                        v.get("title", ""), v.get("side_text", ""), v.get("uid", "")])
+    elif kind == "users":
+        w.writerow(["uid", "이름", "이메일", "로그인시각"])
+        for u in _read_jsonl(USERS_FILE):
+            w.writerow([u.get("uid", ""), u.get("name", ""), u.get("email", ""), _iso(u.get("ts", 0))])
+    elif kind == "daily":
+        events = _read_all_events()
+        daily: dict[str, dict] = {}
+        sess: dict[str, dict[str, int]] = {}
+        for e in events:
+            d = _kst_date_of(e.get("ts", 0))
+            day = daily.setdefault(d, {"views": 0, "uniq": set()})
+            if e.get("vid"):
+                day["uniq"].add(e["vid"])
+            if e.get("event") == "view":
+                day["views"] += 1
+            if e.get("sid"):
+                sd = sess.setdefault(d, {})
+                sd[e["sid"]] = max(sd.get(e["sid"], 0), e.get("dur", 0))
+        w.writerow(["날짜", "페이지뷰", "방문자", "세션", "평균체류(초)"])
+        for d in sorted(daily):
+            durs = list(sess.get(d, {}).values())
+            w.writerow([d, daily[d]["views"], len(daily[d]["uniq"]), len(durs),
+                        int(sum(durs) / len(durs)) if durs else 0])
+    else:
+        return JSONResponse(status_code=404, content={"error": "unknown_kind"})
+    return Response(
+        content="﻿" + buf.getvalue(),  # BOM — 엑셀 한글 인코딩용
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="whatpercent-{kind}-{_kst_today()}.csv"'},
+    )
 
 
 @app.get("/admin")
@@ -875,39 +991,36 @@ def votes_me(request: Request, date: str | None = None):
     return {"votes": mine, "counts": counts, "my_total": total}
 
 
-@app.get("/api/profile/me")
-def profile_me(request: Request):
-    user = _auth_user(request)
-    if not user:
-        return JSONResponse(status_code=401, content={
-            "error": "login_required", "message": "구글 로그인을 해야 분석을 볼 수 있습니다."})
-    my = [v for v in _effective_votes(_read_all_votes()).values() if v.get("uid") == user["u"]]
+def _profile_cache_file(uid: str) -> Path:
+    return PROFILE_DIR / (hashlib.sha256(uid.encode()).hexdigest()[:24] + ".json")
+
+
+def _my_vote_list(uid: str) -> list[dict]:
+    my = [v for v in _effective_votes(_read_all_votes()).values() if v.get("uid") == uid]
     my.sort(key=lambda v: (v.get("date", ""), v.get("idx", 0)))
+    return my
+
+
+def _read_profile_cache(uid: str) -> dict | None:
+    f = _profile_cache_file(uid)
+    if not f.exists():
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _compute_profile(uid: str, name: str = "") -> dict:
+    """투표 이력 → 8축 페르소나 계산 + 캐시 저장. AI 실패 시 예외."""
+    my = _my_vote_list(uid)
     n = len(my)
-    if n < 3:
-        return {"status": "not_enough", "count": n,
-                "message": f"지금까지 {n}건 참여했습니다. 3건 이상 투표하면 성향을 분석해 드려요."}
-    uid_hash = hashlib.sha256(user["u"].encode()).hexdigest()[:24]
-    cache_file = PROFILE_DIR / f"{uid_hash}.json"
-    if cache_file.exists():
-        try:
-            cached = json.loads(cache_file.read_text(encoding="utf-8"))
-            if cached.get("count") == n:
-                return {"status": "ok", "count": n, "profile": cached["profile"]}
-        except (OSError, json.JSONDecodeError):
-            pass
-    limited = _rate_limit(request)
-    if limited:
-        return limited
     lines = "\n".join(
         f"- [{v.get('date')}] {v.get('title')} → {'긍정' if v.get('side') == 'a' else '부정'}"
         f" (선택한 입장: {v.get('side_text', '')})"
         for v in my[-40:]
     )
-    try:
-        data = _call(SYSTEM_PROFILE, f"투표 이력 {n}건:\n{lines}\n\n8축 성향을 분석하라.", PROFILE_SCHEMA)
-    except Exception as e:  # noqa: BLE001
-        return JSONResponse(status_code=502, content={"error": "ai", "message": str(e)})
+    data = _call(SYSTEM_PROFILE, f"투표 이력 {n}건:\n{lines}\n\n8축 성향을 분석하라.", PROFILE_SCHEMA)
     axes = data.get("axes", [])[:8]
     fixed = []
     for i, lab in enumerate(AXIS_LABELS):
@@ -920,11 +1033,36 @@ def profile_me(request: Request):
         fixed.append({"label": lab, "score": score})
     profile = {"persona": str(data.get("persona", ""))[:40],
                "summary": str(data.get("summary", ""))[:400], "axes": fixed}
+    cached = {"uid": uid, "name": name[:40], "count": n, "profile": profile,
+              "updated_at": datetime.now(KST).strftime("%Y-%m-%d %H:%M")}
     try:
-        cache_file.write_text(json.dumps({"count": n, "profile": profile}, ensure_ascii=False), encoding="utf-8")
+        _profile_cache_file(uid).write_text(json.dumps(cached, ensure_ascii=False), encoding="utf-8")
     except OSError:
         pass
-    return {"status": "ok", "count": n, "profile": profile}
+    return cached
+
+
+@app.get("/api/profile/me")
+def profile_me(request: Request):
+    user = _auth_user(request)
+    if not user:
+        return JSONResponse(status_code=401, content={
+            "error": "login_required", "message": "구글 로그인을 해야 분석을 볼 수 있습니다."})
+    n = len(_my_vote_list(user["u"]))
+    if n < 3:
+        return {"status": "not_enough", "count": n,
+                "message": f"지금까지 {n}건 참여했습니다. 3건 이상 투표하면 성향을 분석해 드려요."}
+    cached = _read_profile_cache(user["u"])
+    if cached and cached.get("count") == n:
+        return {"status": "ok", "count": n, "profile": cached["profile"]}
+    limited = _rate_limit(request)
+    if limited:
+        return limited
+    try:
+        cached = _compute_profile(user["u"], user.get("n", ""))
+    except Exception as e:  # noqa: BLE001
+        return JSONResponse(status_code=502, content={"error": "ai", "message": str(e)})
+    return {"status": "ok", "count": cached["count"], "profile": cached["profile"]}
 
 
 @app.get("/api/daily")
