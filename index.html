@@ -1004,7 +1004,11 @@ quizGo.addEventListener('click', function(){
     var h=resultHTML(d)+'<button class="again" id="askAgain">다른 사연으로 다시 재보기</button>';
     hideSteps();
     askRes.innerHTML=h; askRes.style.display='block'; askBtn.disabled=false;
-    document.getElementById('askAgain').addEventListener('click', function(){ resetAsk(); askInput.focus(); });
+    document.getElementById('askAgain').addEventListener('click', function(){
+      resetAsk();
+      askInput.value=''; askInput.style.height='auto';
+      askInput.focus();
+    });
   })
   .catch(function(){ showError('서버에 연결할 수 없습니다.'); });
 });
