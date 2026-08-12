@@ -177,6 +177,11 @@
   .hist-item .lb{flex:none; font-size:.72rem; color:var(--ink-faint); text-align:right}
   .hist-item .pc{flex:none; font-weight:800; font-variant-numeric:tabular-nums}
   .hist-item .pc.hot{color:var(--hot)} .hist-item .pc.cold{color:var(--cold)} .hist-item .pc.mid{color:var(--ink-soft)}
+  .hist-item.clickable{cursor:pointer; border-radius:8px}
+  .hist-item.clickable:hover{background:var(--surface2)}
+  .hist-item .arrow{flex:none; color:var(--ink-faint); font-weight:700}
+  .hd-story{font-size:.98rem; font-weight:700; line-height:1.6; margin:2px 0 4px}
+  .hd-meta{font-size:.76rem; color:var(--ink-faint); margin-bottom:14px}
   .hist-empty{padding:22px 0; font-size:.87rem; color:var(--ink-faint); text-align:center}
 
   /* ---------- daily debates ---------- */
@@ -925,6 +930,29 @@ function apiHeaders(){
   if(AUTH) h['Authorization']='Bearer '+AUTH.token;
   return h;
 }
+function resultHTML(d){
+  var pct=Math.max(0,Math.min(100,d.percent|0));
+  var vc = pct>=55?'var(--hot)':(pct>=45?'var(--ink-soft)':'var(--cold)');
+  return '<div class="gauge"><div class="gauge-top"><span class="big">'+pct+'<small>%</small></span>'
+   +'<span class="verdict" style="color:'+vc+'">'+esc(d.verdict||'')+'</span></div>'
+   +'<div class="track"><span class="marker" style="left:'+pct+'%"></span></div>'
+   +'<div class="track-cap"><span>0% 냉담</span><span>100% 뜨거운 공감</span></div></div>'
+   +'<p class="basis">'+esc(d.summary||'')+'</p>'
+   +'<ul class="cond-list">'+(d.factors||[]).map(function(f){
+      var imp=String(f.impact||'');
+      var cls=imp.indexOf('+')===0?'d-up':(imp.indexOf('-')===0?'d-dn':'d-zero');
+      return '<li><span>'+esc(f.label)+'</span><span class="'+cls+'">'+esc(imp)+'</span></li>';
+    }).join('')+'</ul>'
+   +((d.groups&&d.groups.length)?'<div class="demo-grid" style="margin-top:14px"><h4>집단별 예측</h4>'
+   +(d.groups||[]).map(function(g){
+      var gp=Math.max(0,Math.min(100,g.percent|0));
+      return '<div class="bar-row"><span class="lbl">'+esc(g.label)+'</span>'
+        +'<div class="bar"><i class="'+(gp<50?'cool':'')+'" style="width:'+gp+'%"></i></div>'
+        +'<span class="val">'+gp+'%</span></div>';
+    }).join('')+'</div>':'')
+   +(d.tip?'<div class="ai-note"><b>AI 조언</b> — '+esc(d.tip)+'</div>':'')
+   +'<p class="basis">'+esc(d.caveat||'이 수치는 실측 여론조사가 아닌 AI 모델의 추정입니다.')+'</p>';
+}
 function runAsk(){
   if(askBtn.disabled) return;
   resetAsk(); askBtn.disabled=true;
@@ -973,28 +1001,7 @@ quizGo.addEventListener('click', function(){
   .then(function(res){
     if(!res.ok){ showError(res.d.message||'예측 실패'); return; }
     var d=res.d;
-    var pct=Math.max(0,Math.min(100,d.percent|0));
-    var vc = pct>=55?'var(--hot)':(pct>=45?'var(--ink-soft)':'var(--cold)');
-    var h='<div class="gauge"><div class="gauge-top"><span class="big">'+pct+'<small>%</small></span>'
-     +'<span class="verdict" style="color:'+vc+'">'+esc(d.verdict||'')+'</span></div>'
-     +'<div class="track"><span class="marker" style="left:'+pct+'%"></span></div>'
-     +'<div class="track-cap"><span>0% 냉담</span><span>100% 뜨거운 공감</span></div></div>'
-     +'<p class="basis">'+esc(d.summary||'')+'</p>'
-     +'<ul class="cond-list">'+(d.factors||[]).map(function(f){
-        var imp=String(f.impact||'');
-        var cls=imp.indexOf('+')===0?'d-up':(imp.indexOf('-')===0?'d-dn':'d-zero');
-        return '<li><span>'+esc(f.label)+'</span><span class="'+cls+'">'+esc(imp)+'</span></li>';
-      }).join('')+'</ul>'
-     +'<div class="demo-grid" style="margin-top:14px"><h4>집단별 예측</h4>'
-     +(d.groups||[]).map(function(g){
-        var gp=Math.max(0,Math.min(100,g.percent|0));
-        return '<div class="bar-row"><span class="lbl">'+esc(g.label)+'</span>'
-          +'<div class="bar"><i class="'+(gp<50?'cool':'')+'" style="width:'+gp+'%"></i></div>'
-          +'<span class="val">'+gp+'%</span></div>';
-      }).join('')+'</div>'
-     +(d.tip?'<div class="ai-note"><b>AI 조언</b> — '+esc(d.tip)+'</div>':'')
-     +'<p class="basis">'+esc(d.caveat||'이 수치는 실측 여론조사가 아닌 AI 모델의 추정입니다.')+'</p>'
-     +'<button class="again" id="askAgain">다른 사연으로 다시 재보기</button>';
+    var h=resultHTML(d)+'<button class="again" id="askAgain">다른 사연으로 다시 재보기</button>';
     hideSteps();
     askRes.innerHTML=h; askRes.style.display='block'; askBtn.disabled=false;
     document.getElementById('askAgain').addEventListener('click', function(){ resetAsk(); askInput.focus(); });
@@ -1029,17 +1036,39 @@ function openHistory(){
       sheetBody.innerHTML='<div class="hist-empty">아직 측정 기록이 없습니다 — 첫 번째로 재보세요!</div>';
       return;
     }
-    sheetBody.innerHTML='<div class="cm-note" style="padding-top:0">다른 사람들이 최근에 재본 생각들 (최신 '+items.length+'건 · 사연은 100자까지 표시)</div>'
+    sheetBody.innerHTML='<div class="cm-note" style="padding-top:0">다른 사람들이 최근에 재본 생각들 (최신 '+items.length+'건 · 사연은 100자까지 표시)<br>항목을 누르면 그 사람이 받은 결과 전체를 볼 수 있어요.</div>'
       +items.map(function(it){
         var p=Math.max(0,Math.min(100,it.percent|0));
         var cls=p>=55?'hot':(p>=45?'mid':'cold');
-        return '<div class="hist-item">'
+        return '<div class="hist-item'+(it.id?' clickable':'')+'"'+(it.id?' data-hid="'+esc(it.id)+'"':'')+'>'
           +'<span class="st">'+esc(it.story||'')+'</span>'
           +'<span class="lb">'+(it.label?esc(it.label)+'<br>':'')+timeAgo(it.ts)+'</span>'
-          +'<span class="pc '+cls+'">'+p+'%</span></div>';
+          +'<span class="pc '+cls+'">'+p+'%</span>'
+          +(it.id?'<span class="arrow">›</span>':'')+'</div>';
       }).join('');
+    sheetBody.querySelectorAll('.hist-item.clickable').forEach(function(el){
+      el.addEventListener('click', function(){ openHistoryDetail(el.dataset.hid); });
+    });
   }).catch(function(){
     sheetBody.innerHTML='<div class="hist-empty">히스토리를 불러오지 못했습니다.</div>';
+  });
+}
+function openHistoryDetail(hid){
+  sheetTitle.textContent='측정 결과 훑어보기';
+  sheetBody.innerHTML='<div class="hist-empty">불러오는 중…</div>';
+  fetch('/api/history/'+encodeURIComponent(hid))
+  .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+  .then(function(it){
+    sheetBody.innerHTML='<button class="again" id="histBack" style="margin:0 0 14px">← 목록으로</button>'
+      +'<div class="hd-story">“'+esc(it.story||'')+'”</div>'
+      +'<div class="hd-meta">'+(it.label?esc(it.label)+' · ':'')+timeAgo(it.ts)+' 측정</div>'
+      +resultHTML(it.result||{});
+    document.getElementById('histBack').addEventListener('click', openHistory);
+  })
+  .catch(function(){
+    sheetBody.innerHTML='<button class="again" id="histBack" style="margin:0 0 14px">← 목록으로</button>'
+      +'<div class="hist-empty">이 측정의 상세 결과가 저장되어 있지 않습니다.</div>';
+    document.getElementById('histBack').addEventListener('click', openHistory);
   });
 }
 document.getElementById('histLink').addEventListener('click', openHistory);

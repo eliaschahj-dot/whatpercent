@@ -671,7 +671,18 @@ def _startup():
 
 @app.get("/api/history")
 def history(limit: int = 30):
-    return {"items": _read_history(max(1, min(100, limit)))}
+    items = _read_history(max(1, min(100, limit)))
+    return {"items": [{k: v for k, v in it.items() if k != "result"} for it in items]}
+
+
+@app.get("/api/history/{hid}")
+def history_detail(hid: str):
+    if not (4 <= len(hid) <= 20 and hid.isalnum()):
+        return JSONResponse(status_code=400, content={"error": "bad_id"})
+    for it in reversed(_read_history(1000)):
+        if it.get("id") == hid and it.get("result"):
+            return it
+    return JSONResponse(status_code=404, content={"error": "not_found"})
 
 
 @app.get("/api/config")
@@ -1172,11 +1183,21 @@ def predict(body: PredictIn, request: Request):
         )
         data["percent"] = max(0, min(100, int(data["percent"])))
         _log_history({
+            "id": pysecrets.token_hex(6),
             "ts": int(time.time()),
             "story": body.story.strip()[:100],
             "label": body.topic_label.strip()[:40],
             "percent": data["percent"],
             "verdict": str(data.get("verdict", ""))[:20],
+            "result": {
+                "percent": data["percent"],
+                "verdict": str(data.get("verdict", ""))[:40],
+                "summary": str(data.get("summary", ""))[:600],
+                "factors": data.get("factors", [])[:8],
+                "groups": data.get("groups", [])[:6],
+                "tip": str(data.get("tip", ""))[:300],
+                "caveat": str(data.get("caveat", ""))[:300],
+            },
         })
         _user = _auth_user(request)
         _append_jsonl(MEASURES_FILE, {
