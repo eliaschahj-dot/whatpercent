@@ -276,20 +276,17 @@ _hist_lock = threading.Lock()
 
 
 def _log_history(entry: dict):
-    """예측 1건을 JSONL로 기록. 사연은 100자까지만 저장(개인정보 노출 최소화)."""
+    """예측 1건을 JSONL로 기록. 사연은 100자까지만 저장(개인정보 노출 최소화). 삭제하지 않고 누적 보관."""
     try:
         with _hist_lock:
             with HISTORY_FILE.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            # 1,000건 초과 시 최근 500건만 유지
-            lines = HISTORY_FILE.read_text(encoding="utf-8").splitlines()
-            if len(lines) > 1000:
-                HISTORY_FILE.write_text("\n".join(lines[-500:]) + "\n", encoding="utf-8")
     except OSError:
         pass  # 기록 실패는 예측 응답을 막지 않는다
 
 
-def _read_history(limit: int = 30) -> list[dict]:
+def _read_history_all() -> list[dict]:
+    """전체 히스토리, 최신순."""
     try:
         with _hist_lock:
             if not HISTORY_FILE.exists():
@@ -298,13 +295,11 @@ def _read_history(limit: int = 30) -> list[dict]:
     except OSError:
         return []
     out = []
-    for ln in reversed(lines[-limit * 2:]):
+    for ln in reversed(lines):
         try:
             out.append(json.loads(ln))
         except json.JSONDecodeError:
             continue
-        if len(out) >= limit:
-            break
     return out
 
 
@@ -670,16 +665,23 @@ def _startup():
 
 
 @app.get("/api/history")
-def history(limit: int = 30):
-    items = _read_history(max(1, min(100, limit)))
-    return {"items": [{k: v for k, v in it.items() if k != "result"} for it in items]}
+def history(limit: int = 50, offset: int = 0):
+    limit = max(1, min(100, limit))
+    offset = max(0, min(1_000_000, offset))
+    allitems = _read_history_all()
+    page = allitems[offset:offset + limit]
+    return {
+        "items": [{k: v for k, v in it.items() if k != "result"} for it in page],
+        "total": len(allitems),
+        "has_more": offset + limit < len(allitems),
+    }
 
 
 @app.get("/api/history/{hid}")
 def history_detail(hid: str):
     if not (4 <= len(hid) <= 20 and hid.isalnum()):
         return JSONResponse(status_code=400, content={"error": "bad_id"})
-    for it in reversed(_read_history(1000)):
+    for it in _read_history_all():
         if it.get("id") == hid and it.get("result"):
             return it
     return JSONResponse(status_code=404, content={"error": "not_found"})

@@ -1029,33 +1029,55 @@ function timeAgo(ts){
   if(s<86400) return Math.floor(s/3600)+'시간 전';
   return Math.floor(s/86400)+'일 전';
 }
+var histOffset=0;
+function histItemHTML(it){
+  var p=Math.max(0,Math.min(100,it.percent|0));
+  var cls=p>=55?'hot':(p>=45?'mid':'cold');
+  return '<div class="hist-item'+(it.id?' clickable':'')+'"'+(it.id?' data-hid="'+esc(it.id)+'"':'')+'>'
+    +'<span class="st">'+esc(it.story||'')+'</span>'
+    +'<span class="lb">'+(it.label?esc(it.label)+'<br>':'')+timeAgo(it.ts)+'</span>'
+    +'<span class="pc '+cls+'">'+p+'%</span>'
+    +(it.id?'<span class="arrow">›</span>':'')+'</div>';
+}
+function fetchHistPage(first){
+  fetch('/api/history?limit=50&offset='+histOffset)
+  .then(function(r){return r.json();}).then(function(d){
+    var items=d.items||[], total=d.total||0;
+    if(first){
+      if(!items.length){
+        sheetBody.innerHTML='<div class="hist-empty">아직 측정 기록이 없습니다 — 첫 번째로 재보세요!</div>';
+        return;
+      }
+      sheetBody.innerHTML='<div class="cm-note" style="padding-top:0">다른 사람들이 재본 생각들 (누적 <b>'+total+'건</b> · 사연은 100자까지 표시)<br>항목을 누르면 그 사람이 받은 결과 전체를 볼 수 있어요.</div>'
+        +'<div id="histItems"></div><div id="histMore"></div>';
+      document.getElementById('histItems').addEventListener('click', function(e){
+        var el=e.target.closest('.hist-item.clickable');
+        if(el) openHistoryDetail(el.dataset.hid);
+      });
+    }
+    document.getElementById('histItems').insertAdjacentHTML('beforeend', items.map(histItemHTML).join(''));
+    histOffset+=items.length;
+    var more=document.getElementById('histMore');
+    if(d.has_more){
+      more.innerHTML='<button class="again" id="histMoreBtn" style="width:100%;margin-top:12px">더 보기 — '+(total-histOffset)+'건 남음</button>';
+      document.getElementById('histMoreBtn').addEventListener('click', function(){
+        this.disabled=true; this.textContent='불러오는 중…';
+        fetchHistPage(false);
+      });
+    } else {
+      more.innerHTML=histOffset>50?'<div class="hist-empty">누적 기록 끝 — 전부 '+total+'건</div>':'';
+    }
+  }).catch(function(){
+    if(first) sheetBody.innerHTML='<div class="hist-empty">히스토리를 불러오지 못했습니다.</div>';
+  });
+}
 function openHistory(){
   sheetChip.style.display='none';
-  sheetTitle.textContent='최근 측정 히스토리';
+  sheetTitle.textContent='측정 히스토리';
   sheetBody.innerHTML='<div class="hist-empty">불러오는 중…</div>';
   openSheet();
-  fetch('/api/history').then(function(r){return r.json();}).then(function(d){
-    var items=d.items||[];
-    if(!items.length){
-      sheetBody.innerHTML='<div class="hist-empty">아직 측정 기록이 없습니다 — 첫 번째로 재보세요!</div>';
-      return;
-    }
-    sheetBody.innerHTML='<div class="cm-note" style="padding-top:0">다른 사람들이 최근에 재본 생각들 (최신 '+items.length+'건 · 사연은 100자까지 표시)<br>항목을 누르면 그 사람이 받은 결과 전체를 볼 수 있어요.</div>'
-      +items.map(function(it){
-        var p=Math.max(0,Math.min(100,it.percent|0));
-        var cls=p>=55?'hot':(p>=45?'mid':'cold');
-        return '<div class="hist-item'+(it.id?' clickable':'')+'"'+(it.id?' data-hid="'+esc(it.id)+'"':'')+'>'
-          +'<span class="st">'+esc(it.story||'')+'</span>'
-          +'<span class="lb">'+(it.label?esc(it.label)+'<br>':'')+timeAgo(it.ts)+'</span>'
-          +'<span class="pc '+cls+'">'+p+'%</span>'
-          +(it.id?'<span class="arrow">›</span>':'')+'</div>';
-      }).join('');
-    sheetBody.querySelectorAll('.hist-item.clickable').forEach(function(el){
-      el.addEventListener('click', function(){ openHistoryDetail(el.dataset.hid); });
-    });
-  }).catch(function(){
-    sheetBody.innerHTML='<div class="hist-empty">히스토리를 불러오지 못했습니다.</div>';
-  });
+  histOffset=0;
+  fetchHistPage(true);
 }
 function openHistoryDetail(hid){
   sheetTitle.textContent='측정 결과 훑어보기';
