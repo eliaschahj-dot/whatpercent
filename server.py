@@ -1119,28 +1119,27 @@ def daily_dates():
     return {"dates": dates, "curated": CURATED_DATE, "today": _kst_today()}
 
 
+_HEALTH_TTL = 60                                   # 상태 핑 캐시(초) — /api/health는 방문마다 호출된다
+_health_cache: dict = {"at": 0.0, "body": None}
+
+
 @app.get("/api/health")
 def health():
+    """AI 자격증명 상태. 실패 사유 원문은 서버 로그에만 남기고 화면에는 일반 안내만 낸다."""
+    now = time.time()
+    if _health_cache["body"] is not None and now - _health_cache["at"] < _HEALTH_TTL:
+        return JSONResponse(status_code=200, content=_health_cache["body"])
     try:
         client.messages.count_tokens(
             model=MODEL, messages=[{"role": "user", "content": "ping"}]
         )
-        return {"ok": True, "model": MODEL}
-    except anthropic.AuthenticationError:
-        return JSONResponse(
-            status_code=200,
-            content={"ok": False, "reason": "auth",
-                     "message": "Anthropic API 자격증명이 없습니다. 환경변수 ANTHROPIC_API_KEY를 설정한 뒤 서버를 재시작하세요."},
-        )
-    except Exception as e:  # noqa: BLE001 — 데모: 사유를 그대로 화면에 노출
-        msg = str(e)
-        if "Could not resolve authentication" in msg:
-            return JSONResponse(status_code=200, content={
-                "ok": False, "reason": "auth",
-                "message": "Anthropic API 키가 설정되어 있지 않습니다. console.anthropic.com에서 키를 발급받아 "
-                           "환경변수 ANTHROPIC_API_KEY로 설정한 뒤 서버를 재시작하세요.",
-            })
-        return JSONResponse(status_code=200, content={"ok": False, "reason": "error", "message": msg})
+        body = {"ok": True, "model": MODEL}
+    except Exception as e:  # noqa: BLE001 — 사유(키·조직·네트워크)는 로그로만 남긴다
+        print(f"[health] anthropic ping failed: {type(e).__name__}: {e}", flush=True)
+        body = {"ok": False, "reason": "unavailable",
+                "message": "AI 분석이 일시적으로 중단되었습니다. 잠시 후 다시 시도해 주세요."}
+    _health_cache.update(at=now, body=body)
+    return JSONResponse(status_code=200, content=body)
 
 
 @app.post("/api/questions")

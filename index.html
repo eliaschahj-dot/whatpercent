@@ -894,7 +894,7 @@ var curStory='', curQs=[], answers=[], curLabel='';
 fetch('/api/health').then(function(r){return r.json();}).then(function(h){
   if(!h.ok){
     healthBanner.style.display='block';
-    healthBanner.innerHTML='<b>AI 연결 안 됨</b> — '+esc(h.message||'자격증명을 확인하세요.');
+    healthBanner.innerHTML='<b>AI 점검 중</b> — '+esc(h.message||'잠시 후 다시 시도해 주세요.');
     askBtn.disabled=true;
   }
 }).catch(function(){ /* 서버 미기동 등 — 입력 시 오류로 안내 */ });
