@@ -191,6 +191,12 @@
     border-radius:99px; padding:5px 12px; font-size:.79rem; cursor:pointer; font-variant-numeric:tabular-nums;
   }
   .date-nav button.sel{background:var(--ink); color:var(--bg); border-color:var(--ink); font-weight:700}
+  .date-nav .dnav-arrow{padding:5px 11px; font-weight:700; line-height:1.1; color:var(--ink)}
+  .date-nav .dnav-arrow[disabled]{opacity:.3; cursor:default}
+  .daily-fallback{margin:0 4px 12px; padding:10px 12px; border-radius:10px;
+    background:var(--gold-soft); color:var(--gold); font-size:.8rem; line-height:1.5}
+  .daily-retry{margin-top:12px; padding:7px 15px; border-radius:99px; border:1px solid var(--line);
+    background:var(--bg); color:var(--ink); font-size:.82rem; cursor:pointer}
   .src-ai{background:var(--gold-soft); color:var(--gold)}
   .sides{display:flex; flex-direction:column; gap:6px; margin:12px 0 0; font-size:.82rem}
   .sides span{padding:8px 12px; border-radius:9px}
@@ -1112,7 +1118,7 @@ document.querySelectorAll('.topnav button').forEach(function(b){
     var home=b.dataset.tab==='home';
     tabHome.style.display=home?'flex':'none';
     tabDebates.style.display=home?'none':'block';
-    if(!home && !dailyLoaded){ dailyLoaded=true; initDaily(); }
+    if(!home && !dailyLoaded && !dailyLoading){ initDaily(); }
     window.scrollTo({top:0});
   });
 });
@@ -1120,34 +1126,57 @@ document.querySelectorAll('.topnav button').forEach(function(b){
 /* ================= 오늘의 논쟁 (매일 갱신 + 과거 보관) ================= */
 var dateNav=document.getElementById('dateNav'), dailyWrap=document.getElementById('dailyWrap'),
     archiveCurated=document.getElementById('archiveCurated');
-var curatedDate='2026-08-05', todayStr='', dailyPoll=null;
+var curatedDate='2026-08-05', todayStr='', dailyPoll=null, dailyLoading=false;
+var DATES_PER_PAGE=7, DAILY_POLL_MAX=6;          /* 날짜 7개씩 · 생성 대기 최대 8초x6 */
+var allDates=[], datePage=0, curDate='', dailyNotice='';
 
 function fmtDate(d){ var p=d.split('-'); return (+p[1])+'.'+(+p[2]); }
 
 function initDaily(){
+  dailyLoading=true;
   fetch('/api/daily/dates').then(function(r){return r.json();}).then(function(d){
     curatedDate=d.curated||curatedDate; todayStr=d.today||'';
     var dates=(d.dates||[]).slice();
     if(todayStr && dates.indexOf(todayStr)===-1) dates.unshift(todayStr);
     if(dates.indexOf(curatedDate)===-1) dates.push(curatedDate);
-    dates=dates.filter(function(v,i){return dates.indexOf(v)===i;});
-    dateNav.innerHTML=dates.map(function(dt,i){
-      var lbl=fmtDate(dt)+(dt===todayStr?' 오늘':(dt===curatedDate?' 창간호':''));
-      return '<button data-date="'+dt+'" class="'+(i===0?'sel':'')+'">'+lbl+'</button>';
-    }).join('');
-    dateNav.querySelectorAll('button').forEach(function(b){
-      b.addEventListener('click', function(){
-        dateNav.querySelectorAll('button').forEach(function(x){x.classList.remove('sel');});
-        b.classList.add('sel'); selectDate(b.dataset.date);
-      });
-    });
-    selectDate(dates[0]);
+    allDates=dates.filter(function(v,i){return dates.indexOf(v)===i;});
+    datePage=0; curDate=allDates[0];
+    dailyLoaded=true; dailyLoading=false;
+    renderDateNav();
+    selectDate(curDate);
   }).catch(function(){
-    dailyWrap.innerHTML='<div class="daily-wait">서버에 연결할 수 없습니다.</div>';
+    dailyLoading=false;                      /* 실패해도 탭을 다시 누르면 재시도된다 */
+    dailyWrap.innerHTML='<div class="daily-wait">서버에 연결할 수 없습니다.'
+      +'<br><button class="daily-retry" type="button">다시 시도</button></div>';
+    bindDailyRetry(function(){ initDaily(); });
+  });
+}
+
+/* 날짜가 매일 늘어나므로 7개씩 끊어 화살표로 넘긴다 */
+function renderDateNav(){
+  var pages=Math.max(1, Math.ceil(allDates.length/DATES_PER_PAGE));
+  datePage=Math.min(Math.max(datePage,0), pages-1);
+  var start=datePage*DATES_PER_PAGE, slice=allDates.slice(start, start+DATES_PER_PAGE);
+  var html='';
+  if(pages>1) html+='<button type="button" class="dnav-arrow" data-nav="-1" aria-label="최근 날짜"'
+    +(datePage===0?' disabled':'')+'>&lsaquo;</button>';
+  html+=slice.map(function(dt){
+    var lbl=fmtDate(dt)+(dt===todayStr?' 오늘':(dt===curatedDate?' 창간호':''));
+    return '<button type="button" data-date="'+dt+'" class="'+(dt===curDate?'sel':'')+'">'+lbl+'</button>';
+  }).join('');
+  if(pages>1) html+='<button type="button" class="dnav-arrow" data-nav="1" aria-label="이전 날짜"'
+    +(datePage>=pages-1?' disabled':'')+'>&rsaquo;</button>';
+  dateNav.innerHTML=html;
+  dateNav.querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click', function(){
+      if(b.dataset.nav){ datePage+=(+b.dataset.nav); renderDateNav(); return; }
+      curDate=b.dataset.date; renderDateNav(); selectDate(curDate);
+    });
   });
 }
 
 function selectDate(dt){
+  curDate=dt;
   if(dailyPoll){ clearTimeout(dailyPoll); dailyPoll=null; }
   if(dt===curatedDate){
     dailyWrap.style.display='none'; dailyWrap.innerHTML='';
@@ -1159,29 +1188,55 @@ function selectDate(dt){
   loadDaily(dt);
 }
 
-function loadDaily(dt){
+function loadDaily(dt, tries){
+  tries=tries||0;
   dailyWrap.innerHTML='<div class="daily-wait">불러오는 중…</div>';
   fetch('/api/daily?date='+encodeURIComponent(dt))
   .then(function(r){ return r.json().then(function(d){ return {code:r.status, d:d}; }); })
   .then(function(res){
     if(res.code===200){ renderDaily(res.d); return; }
-    if(res.code===202){
+    if(res.code===202 && tries<DAILY_POLL_MAX){
       dailyWrap.innerHTML='<div class="daily-wait">🌡️ AI가 오늘의 논쟁을 수집·분석하고 있습니다…<br>'
         +'<small>웹 검색으로 화제 논쟁을 찾는 중입니다. 1~2분 정도 걸립니다.</small></div>';
-      dailyPoll=setTimeout(function(){ loadDaily(dt); }, 8000);
+      dailyPoll=setTimeout(function(){ loadDaily(dt, tries+1); }, 8000);
       return;
     }
-    dailyWrap.innerHTML='<div class="daily-wait">'+esc(res.d.message||'이 날짜의 논쟁 기록이 없습니다.')+'</div>';
+    fallbackDaily(dt, res.code===202 ? '오늘 회차는 아직 준비되지 않았습니다.'
+      : ((res.d && res.d.message) || '이 날짜의 논쟁 기록이 없습니다.'));
   })
-  .catch(function(){
-    dailyWrap.innerHTML='<div class="daily-wait">서버에 연결할 수 없습니다.</div>';
-  });
+  .catch(function(){ fallbackDaily(dt, '서버에 연결할 수 없습니다.'); });
+}
+
+/* 오늘 회차를 못 불러오면 빈 화면 대신 최신 회차를 보여준다 */
+function fallbackDaily(dt, msg){
+  var alt=null;
+  if(dt===todayStr){
+    for(var i=0;i<allDates.length;i++){
+      if(allDates[i]!==dt && allDates[i]!==curatedDate){ alt=allDates[i]; break; }
+    }
+  }
+  if(alt){
+    dailyNotice=msg+' 최신 회차('+fmtDate(alt)+')를 대신 보여드립니다.';
+    curDate=alt; datePage=Math.floor(allDates.indexOf(alt)/DATES_PER_PAGE);
+    renderDateNav(); loadDaily(alt);
+    return;
+  }
+  dailyWrap.innerHTML='<div class="daily-wait">'+esc(msg)
+    +'<br><button class="daily-retry" type="button">다시 시도</button></div>';
+  bindDailyRetry(function(){ loadDaily(dt); });
+}
+
+function bindDailyRetry(fn){
+  var b=dailyWrap.querySelector('.daily-retry');
+  if(b) b.addEventListener('click', fn);
 }
 
 function renderDaily(data){
   var items=data.items||[];
   var isToday=data.date===todayStr;
-  var head='<p class="daily-note" style="margin:0 4px 14px">'+esc(data.date||'')+' '
+  var notice=dailyNotice ? '<div class="daily-fallback">'+esc(dailyNotice)+'</div>' : '';
+  dailyNotice='';
+  var head=notice+'<p class="daily-note" style="margin:0 4px 14px">'+esc(data.date||'')+' '
     +(data.method==='web_search'?'웹 검색 기반 선정':'AI 지식 기반 선정')
     +(data.generated_at?' · '+esc(data.generated_at)+' 생성':'')+'</p>';
   dailyWrap.innerHTML=head+items.map(function(it,i){
@@ -1317,8 +1372,7 @@ function onGoogleCred(resp){
     AUTH={token:res.d.token, name:res.d.name, picture:res.d.picture};
     localStorage.setItem('mp_auth', JSON.stringify(AUTH));
     renderAuth();
-    var sel=dateNav.querySelector('button.sel');
-    if(sel && sel.dataset.date===todayStr) refreshMyVotes(todayStr);
+    if(curDate && curDate===todayStr) refreshMyVotes(todayStr);
   })
   .catch(function(){ alert('로그인 처리 중 오류가 발생했습니다.'); });
 }
