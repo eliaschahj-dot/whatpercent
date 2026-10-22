@@ -27,6 +27,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import seo                                    # 검색 유입용 서버 렌더 페이지
+
 MODEL = "claude-opus-5"
 BASE = Path(__file__).parent
 
@@ -590,12 +592,8 @@ def _call(system: str, user: str, schema: dict) -> dict:
 
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
-SITEMAP = """<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://whatpercent.co.kr/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
-</urlset>
-"""
-
+seo.configure(DAILY_DIR)
+app.include_router(seo.router)
 
 # 검색엔진 소유 확인 메타태그: 환경변수만 넣으면 자동 삽입 (코드 수정 불필요)
 _index_cache: str | None = None
@@ -626,16 +624,6 @@ def index():
 @app.get("/favicon.ico")
 def favicon():
     return FileResponse(BASE / "favicon.ico")
-
-
-@app.get("/robots.txt")
-def robots():
-    return PlainTextResponse("User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: https://whatpercent.co.kr/sitemap.xml\n")
-
-
-@app.get("/sitemap.xml")
-def sitemap():
-    return Response(content=SITEMAP, media_type="application/xml")
 
 
 def _daily_scheduler():
