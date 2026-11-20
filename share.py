@@ -54,11 +54,11 @@ def tier(pct: int) -> str:
         return "국민 정서 그 자체"
     if pct >= 70:
         return "다수가 내 편"
-    if pct >= 55:
+    if pct >= 60:
         return "살짝 우세"
-    if pct >= 45:
+    if pct >= 40:                            # 모델이 40%대도 '의견 반반'으로 부르는 일이 많아 폭을 넓게 잡는다
         return "반반 전쟁"
-    if pct >= 30:
+    if pct >= 25:
         return "소수 의견"
     if pct >= 10:
         return "외로운 싸움"
@@ -238,7 +238,7 @@ def render_card(entry: dict) -> bytes | None:
     BG, CARD, INK, SOFT, FAINT = (244, 245, 242), (255, 255, 255), (34, 37, 31), (92, 97, 86), (139, 144, 131)
     HOT, COLD, LINE = (216, 69, 47), (47, 111, 216), (221, 224, 216)
     pct = max(0, min(100, int(entry.get("percent") or 0)))
-    color = HOT if pct >= 55 else (COLD if pct < 45 else INK)
+    color = HOT if pct >= 60 else (COLD if pct < 40 else INK)
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -309,7 +309,7 @@ def og_image(name: str):
     it = _entry(hid)
     if not it or not _data_dir:
         return RedirectResponse("/static/og-image.png", status_code=302)
-    cache = _data_dir / "og" / f"{hid}.png"
+    cache = _data_dir / "og" / f"{hid}.v2.png"      # 카드 디자인·등급 기준을 바꾸면 버전을 올린다
     try:
         if cache.exists():
             data = cache.read_bytes()
@@ -377,7 +377,7 @@ def share_page(hid: str):
     pct = max(0, min(100, int(it.get("percent") or res.get("percent") or 0)))
     story = str(it.get("story") or "").strip()
     shown = story + ("…" if len(story) >= 100 else "")
-    color = "var(--hot)" if pct >= 55 else ("var(--cold)" if pct < 45 else "var(--ink)")
+    color = "var(--hot)" if pct >= 60 else ("var(--cold)" if pct < 40 else "var(--ink)")
     groups = res.get("groups") or []
     rows = "".join(f'<tr><td>{e(g.get("label"))}</td><td>{int(g.get("percent") or 0)}%</td></tr>' for g in groups)
     body = [

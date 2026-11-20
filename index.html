@@ -1105,7 +1105,7 @@ fetch('/api/feed').then(function(r){return r.json();}).then(function(d){ FEED=d|
 
 /* ---------- 결과 등급 · 공유 ---------- */
 function tierOf(p){
-  return p>=90?'국민 정서 그 자체':p>=70?'다수가 내 편':p>=55?'살짝 우세':p>=45?'반반 전쟁':p>=30?'소수 의견':p>=10?'외로운 싸움':'혼자만의 세계';
+  return p>=90?'국민 정서 그 자체':p>=70?'다수가 내 편':p>=60?'살짝 우세':p>=40?'반반 전쟁':p>=25?'소수 의견':p>=10?'외로운 싸움':'혼자만의 세계';
 }
 function copyText(text, btn){
   var done=function(){ var o=btn.textContent; btn.textContent='복사했어요 ✓'; setTimeout(function(){ btn.textContent=o; },1600); };
@@ -1196,7 +1196,8 @@ quizGo.addEventListener('click', function(){
   .then(function(res){
     if(!res.ok){ showError(res.d.message||'예측 실패'); return; }
     var d=res.d;
-    var h='<span class="tier-badge">'+esc(d.tier||tierOf(d.percent|0))+'</span>'+resultHTML(d)+shareHTML(d)
+    /* 공유할 수 없는(민감한) 결과에는 가벼운 등급 라벨을 붙이지 않는다 */
+    var h=(d.shareable===false?'':'<span class="tier-badge">'+esc(d.tier||tierOf(d.percent|0))+'</span>')+resultHTML(d)+shareHTML(d)
       +'<button class="again" id="askAgain">다른 사연으로 다시 재보기</button>';
     hideSteps();
     askRes.innerHTML=h; askRes.style.display='block'; askBtn.disabled=false;
