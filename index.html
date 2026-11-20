@@ -229,6 +229,52 @@
   .askrow button:disabled{opacity:.5; cursor:default}
   .askrow button:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
   .under-row{display:flex; justify-content:flex-end; margin-top:10px; padding-right:8px}
+
+  /* ---------- 첫 화면: 예시 칩 · 대기 중 볼거리 · 피드 ---------- */
+  .starter{margin:14px 0 0; text-align:left}
+  .starter-cap{font-size:.76rem; color:var(--ink-faint); margin:0 6px 7px}
+  .starter-chips{display:flex; flex-wrap:wrap; gap:7px}
+  .starter-chips button{border:1px solid var(--line); background:var(--surface); color:var(--ink-soft);
+    border-radius:99px; padding:8px 13px; font-size:.83rem; cursor:pointer; text-align:left; line-height:1.35}
+  .starter-chips button:hover{border-color:var(--brand); color:var(--ink)}
+  .starter-chips button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+  .askrow textarea.nudge{outline:2px solid var(--hot); animation:nudge .35s}
+  @keyframes nudge{25%{transform:translateX(-4px)} 75%{transform:translateX(4px)}}
+  .ask-ticker{display:none; margin:12px auto 0; max-width:440px; font-size:.82rem; color:var(--ink-soft);
+    background:var(--surface2); border-radius:12px; padding:10px 14px; min-height:2.6em; transition:opacity .35s}
+  .ask-ticker b{color:var(--ink)}
+  .home-feed{margin-top:34px; text-align:left}
+  .home-feed h2{font-size:.98rem; font-weight:800; margin:22px 4px 10px; letter-spacing:-.01em}
+  .home-feed h2 small{font-weight:400; color:var(--ink-faint); font-size:.76rem; margin-left:6px}
+  .teaser{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:13px 15px; margin-bottom:8px;
+    display:flex; align-items:center; gap:12px; cursor:pointer; width:100%; text-align:left; font:inherit; color:inherit}
+  .teaser:hover{border-color:var(--ink-faint)}
+  .teaser:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+  .teaser .tt{flex:1; min-width:0; font-size:.9rem; font-weight:700; line-height:1.4}
+  .teaser .tp{flex:none; font-weight:800; font-variant-numeric:tabular-nums; font-size:1.05rem; min-width:4.4em; text-align:right}
+  .teaser .tp.hide{font-size:.76rem; font-weight:700; color:var(--brand)}
+  .teaser .tv{display:block; font-size:.72rem; font-weight:400; color:var(--ink-faint)}
+  .feed-more{display:block; margin:2px 4px 0; font-size:.8rem; color:var(--ink-soft); background:none; border:0;
+    cursor:pointer; padding:6px 0; text-decoration:underline; text-underline-offset:4px}
+  .recent-item{display:flex; gap:10px; align-items:baseline; padding:10px 4px; border-bottom:1px dotted var(--line);
+    font-size:.86rem; text-decoration:none; color:inherit}
+  .recent-item:hover .st{text-decoration:underline; text-underline-offset:3px}
+  .recent-item .st{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .recent-item .pc{font-weight:800; font-variant-numeric:tabular-nums}
+  .recent-item .pc.hot{color:var(--hot)} .recent-item .pc.cold{color:var(--cold)}
+
+  /* ---------- 결과 등급 · 공유 ---------- */
+  .tier-badge{display:inline-block; font-size:.78rem; font-weight:800; border-radius:99px; padding:3px 11px;
+    background:var(--surface2); color:var(--ink); margin:0 0 2px}
+  .share-box{margin-top:16px; padding-top:14px; border-top:1px solid var(--line)}
+  .share-box p{font-size:.86rem; margin:0 0 10px; font-weight:700; line-height:1.5}
+  .share-row{display:flex; gap:8px; flex-wrap:wrap}
+  .share-row button, .share-row a{flex:1; min-width:104px; text-align:center; border:1px solid var(--line);
+    background:var(--surface); color:var(--ink); border-radius:10px; padding:11px 8px; font-size:.84rem;
+    font-weight:700; cursor:pointer; text-decoration:none; font-family:inherit}
+  .share-row .primary{background:var(--hot); border-color:var(--hot); color:#fff}
+  .share-row button:focus-visible, .share-row a:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+  .share-box .share-note{font-size:.74rem; color:var(--ink-faint); margin:9px 0 0; font-weight:400}
   .ask-steps{margin:14px 0 0; font-size:.85rem; color:var(--ink-soft); display:none}
   .ask-steps div{padding:3px 0; opacity:0; transform:translateY(3px); transition:opacity .4s, transform .4s}
   .ask-steps div.on{opacity:1; transform:none}
@@ -411,9 +457,11 @@
   <p class="hero-sub">내 생각, 대중은 몇 %가 공감할까 — 묻기 전에 AI가 이미 쌓인 여론으로 먼저 재드립니다.</p>
   <div id="healthBanner" class="trust-flag" style="display:none; margin:0 0 14px; text-align:left"></div>
   <div class="askrow">
-    <textarea id="askInput" rows="2" aria-label="내 생각 온도 재보기" placeholder="예: 축의금 5만 원 내고 밥 먹으러 가도 되지 않나?"></textarea>
+    <textarea id="askInput" rows="2" aria-label="내 생각 온도 재보기" placeholder="예: 친구가 내 생일을 까먹었어. 서운한 내가 예민한 걸까?"></textarea>
     <button id="askBtn">재보기</button>
   </div>
+  <div class="starter" id="starter"><p class="starter-cap">뭘 물어볼지 모르겠다면 하나 눌러보세요</p>
+    <div class="starter-chips" id="starterChips"></div></div>
   <div class="under-row"><button class="hist-link" id="histLink">🕐 최근 측정 히스토리</button></div>
   <div class="ask-loader" id="askLoader" aria-hidden="true">
     <svg width="76" height="120" viewBox="0 0 76 120" xmlns="http://www.w3.org/2000/svg">
@@ -433,6 +481,7 @@
     </svg>
   </div>
   <div class="ask-steps" id="askSteps"></div>
+  <div class="ask-ticker" id="askTicker" aria-live="polite"></div>
 
   <div class="ask-quiz" id="askQuiz">
     <p class="quiz-intro" id="quizIntro"></p>
@@ -441,6 +490,11 @@
   </div>
 
   <div class="ask-result" id="askResult"></div>
+</section>
+
+<section class="home-feed" id="homeFeed" style="display:none">
+  <div id="feedDebates"></div>
+  <div id="feedRecent"></div>
 </section>
 
 </div><!-- /tab-home -->
@@ -913,7 +967,7 @@ function resetAsk(){
   askBtn.disabled=false;
 }
 function showSteps(lines){
-  askLoader.classList.add('show');
+  askLoader.classList.add('show'); startTicker();
   steps.style.display='block'; steps.style.textAlign='center';
   steps.innerHTML=lines.map(function(l){return '<div>'+l+'</div>';}).join('');
   var rows=steps.querySelectorAll('div');
@@ -922,7 +976,32 @@ function showSteps(lines){
   rows.forEach(function(r,i){ setTimeout(function(){r.classList.add('on');}, d*(i+1)); });
 }
 function hideSteps(){
-  steps.style.display='none'; askLoader.classList.remove('show');
+  steps.style.display='none'; askLoader.classList.remove('show'); stopTicker();
+}
+
+/* 측정 한 번에 1분쯤 걸린다. 기다리는 동안 다른 논쟁의 공감률을 한 줄씩 보여준다. */
+var FEED={debates:[], recent:[]}, tickerTimer=null, tickerIdx=0;
+var askTicker=document.getElementById('askTicker');
+function tickerLines(){
+  var out=[];
+  (FEED.debates||[]).forEach(function(x){ out.push('💬 <b>'+esc(x.title)+'</b> → 공감 '+x.percent+'%'); });
+  (FEED.recent||[]).forEach(function(x){ out.push('👀 누군가 재본 생각: <b>'+esc(String(x.story).slice(0,38))+(String(x.story).length>38?'…':'')+'</b> → '+x.percent+'%'); });
+  return out;
+}
+function startTicker(){
+  var lines=tickerLines(); if(!lines.length) return;
+  stopTicker();
+  tickerIdx=Math.floor(Math.random()*lines.length);
+  var show=function(){
+    askTicker.style.opacity='0';
+    setTimeout(function(){ askTicker.innerHTML='기다리는 동안 — '+lines[tickerIdx%lines.length]; askTicker.style.opacity='1'; tickerIdx++; }, 250);
+  };
+  askTicker.style.display='block'; show();
+  tickerTimer=setInterval(show, 4500);
+}
+function stopTicker(){
+  if(tickerTimer){ clearInterval(tickerTimer); tickerTimer=null; }
+  askTicker.style.display='none';
 }
 function showError(msg){
   hideSteps();
@@ -960,10 +1039,118 @@ function resultHTML(d){
    +(d.tip?'<div class="ai-note"><b>AI 조언</b> — '+esc(d.tip)+'</div>':'')
    +'<p class="basis">'+esc(d.caveat||'이 수치는 실측 여론조사가 아닌 AI 모델의 추정입니다.')+'</p>';
 }
+/* ---------- 예시 칩: 무엇을 물어볼지 모르는 사람의 첫 걸음 ---------- */
+var STARTERS=[
+  '친구가 내 생일을 까먹었어. 서운한 내가 예민한 걸까?',
+  '썸 타는 사람이 답장을 반나절씩 늦게 해. 관심 없는 거 맞지?',
+  '남자친구가 여사친이랑 단둘이 밥 먹는 거, 싫어해도 되나?',
+  '조별과제 무임승차한 애 이름 빼고 제출해도 될까?',
+  '시험 2주 전인데 친구 생일 파티 가도 될까?',
+  '알바 대타 부탁이 세 번째인데 이번엔 거절해도 되지?',
+  '퇴근 후에 온 상사 카톡, 다음 날 답장해도 될까?',
+  '점심 메뉴를 매번 팀장이 정하는데 따로 먹겠다고 해도 되나?',
+  '친구 결혼식에 축의금 5만 원 내고 밥 먹어도 될까?',
+  '명절에 시댁 먼저 가는 거, 이제 번갈아 가자고 해도 되나?',
+  '윗집 아이 뛰는 소리, 밤 9시에 인터폰 해도 될까?',
+  '더치페이인데 나만 술을 안 마셨어. 술값 빼고 내도 되지?',
+  '단톡방에서 읽고 답 안 하는 친구, 서운해해도 되나?',
+  '전 애인이 준 선물, 헤어지고도 계속 써도 될까?'
+];
+(function(){
+  var pool=STARTERS.slice(), pick=[], n=(window.innerWidth<=480)?3:5;   /* 좁은 화면에서는 피드가 밀리지 않게 3개만 */
+  while(pick.length<n && pool.length){ pick.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]); }
+  var box=document.getElementById('starterChips');
+  box.innerHTML=pick.map(function(t){ return '<button type="button">'+esc(t)+'</button>'; }).join('');
+  box.querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click', function(){
+      if(askBtn.disabled) return;
+      askInput.value=b.textContent; askInput.style.height='auto'; askInput.style.height=askInput.scrollHeight+'px';
+      track('chip'); runAsk();
+    });
+  });
+})();
+
+/* ---------- 첫 화면 피드: 기다리지 않아도 서비스가 뭘 하는지 보이게 ---------- */
+function goDebates(){ var b=document.querySelector('.topnav button[data-tab="debates"]'); if(b) b.click(); }
+function renderFeed(){
+  var wrap=document.getElementById('homeFeed'), fd=document.getElementById('feedDebates'), fr=document.getElementById('feedRecent');
+  var deb=(FEED.debates||[]).slice(0,3), rec=(FEED.recent||[]).slice(0,5);
+  if(!deb.length && !rec.length){ wrap.style.display='none'; return; }
+  fd.innerHTML=deb.length ? '<h2>🔥 오늘의 논쟁<small>대중은 몇 %가 공감할까요? 눌러서 확인</small></h2>'
+    +deb.map(function(x,i){
+      return '<button type="button" class="teaser" data-i="'+i+'"><span class="tt">'+esc(x.title)+'</span>'
+        +'<span class="tp hide">공감률 보기 ›</span></button>';
+    }).join('')+'<button type="button" class="feed-more" id="feedMoreDeb">오늘의 논쟁 전부 보고 투표하기 ›</button>' : '';
+  fr.innerHTML=rec.length ? '<h2>👀 다른 사람들이 재본 생각</h2>'
+    +rec.map(function(x){
+      var p=Math.max(0,Math.min(100,x.percent|0)), cls=p>=55?'hot':(p<45?'cold':'');
+      return '<a class="recent-item" href="/r/'+encodeURIComponent(x.id)+'"><span class="st">'+esc(x.story)+'</span>'
+        +'<span class="pc '+cls+'">'+p+'%</span></a>';
+    }).join('') : '';
+  fd.querySelectorAll('.teaser').forEach(function(b){
+    b.addEventListener('click', function(){
+      var x=deb[+b.dataset.i], tp=b.querySelector('.tp');
+      if(!tp.classList.contains('hide')){ goDebates(); return; }
+      var p=Math.max(0,Math.min(100,x.percent|0));
+      tp.classList.remove('hide');
+      tp.style.color=p>=55?'var(--hot)':(p<45?'var(--cold)':'var(--ink)');
+      tp.innerHTML=p+'%<span class="tv">'+esc(x.verdict||'')+'</span>';
+      track('teaser');
+    });
+  });
+  var more=document.getElementById('feedMoreDeb'); if(more) more.addEventListener('click', goDebates);
+  wrap.style.display='block';
+}
+fetch('/api/feed').then(function(r){return r.json();}).then(function(d){ FEED=d||FEED; renderFeed(); }).catch(function(){});
+
+/* ---------- 결과 등급 · 공유 ---------- */
+function tierOf(p){
+  return p>=90?'국민 정서 그 자체':p>=70?'다수가 내 편':p>=55?'살짝 우세':p>=45?'반반 전쟁':p>=30?'소수 의견':p>=10?'외로운 싸움':'혼자만의 세계';
+}
+function copyText(text, btn){
+  var done=function(){ var o=btn.textContent; btn.textContent='복사했어요 ✓'; setTimeout(function(){ btn.textContent=o; },1600); };
+  var legacy=function(){
+    try{ var ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); var ok=document.execCommand('copy'); document.body.removeChild(ta);
+      if(ok){ done(); return; } }catch(e){}
+    btn.textContent=text;
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done).catch(legacy); }
+  else { legacy(); }
+}
+function shareHTML(d){
+  if(!d.id || d.shareable===false) return '';
+  return '<div class="share-box"><p>친구들 생각은 다를까요? 링크를 보내면 친구들이 투표하고, AI 예측과 비교해 줘요.</p>'
+    +'<div class="share-row"><button type="button" class="primary" id="shNative">📤 친구에게 물어보기</button>'
+    +'<button type="button" id="shCopy">🔗 링크 복사</button>'
+    +'<a id="shImg" href="/og/'+encodeURIComponent(d.id)+'.png" download="몇프로-결과.png">🖼 이미지 저장</a></div>'
+    +'<p class="share-note">공유 링크에는 사연 앞 100자와 이 결과가 표시됩니다.</p></div>';
+}
+function bindShare(d){
+  if(!d.id || d.shareable===false) return;
+  var url=location.origin+'/r/'+d.id, pct=Math.max(0,Math.min(100,d.percent|0));
+  var nat=document.getElementById('shNative'), cp=document.getElementById('shCopy'), im=document.getElementById('shImg');
+  if(nat) nat.addEventListener('click', function(){
+    if(navigator.share){
+      navigator.share({title:'몇프로 — 공감률 '+pct+'%', text:'내 고민인데, 너는 공감해? 투표 좀 해줘', url:url})
+        .then(function(){ track('share',{meta:'native'}); }).catch(function(){});
+    } else { copyText(url, nat); track('share',{meta:'copy'}); }
+  });
+  if(cp) cp.addEventListener('click', function(){ copyText(url, cp); track('share',{meta:'copy'}); });
+  if(im) im.addEventListener('click', function(){ track('share',{meta:'image'}); });
+}
+
 function runAsk(){
   if(askBtn.disabled) return;
+  if(!askInput.value.trim()){
+    /* 예전에는 빈 입력이면 예시 문구로 측정해서 같은 사연이 14건 쌓였다 */
+    askInput.classList.add('nudge'); askInput.focus();
+    setTimeout(function(){ askInput.classList.remove('nudge'); }, 600);
+    return;
+  }
   resetAsk(); askBtn.disabled=true;
-  curStory=askInput.value.trim()||askInput.placeholder.replace(/^예: /,'');
+  curStory=askInput.value.trim();
+  track('ask');
   showSteps(['① AI가 사연을 읽고 있습니다',
              '② 유사 논쟁에서 여론이 갈린 조건을 분석 중… (30초 안팎 소요)']);
   fetch('/api/questions',{method:'POST',headers:apiHeaders(),
@@ -974,6 +1161,7 @@ function runAsk(){
     var d=res.d;
     curQs=d.questions||[];
     curLabel=d.topic_label||'';
+    track('questions');
     answers=new Array(curQs.length).fill(null);
     hideSteps();
     quizIntro.innerHTML='주제군 <b>'+esc(d.topic_label||'')+'</b> — '+esc(d.analysis||'')
@@ -1008,9 +1196,12 @@ quizGo.addEventListener('click', function(){
   .then(function(res){
     if(!res.ok){ showError(res.d.message||'예측 실패'); return; }
     var d=res.d;
-    var h=resultHTML(d)+'<button class="again" id="askAgain">다른 사연으로 다시 재보기</button>';
+    var h='<span class="tier-badge">'+esc(d.tier||tierOf(d.percent|0))+'</span>'+resultHTML(d)+shareHTML(d)
+      +'<button class="again" id="askAgain">다른 사연으로 다시 재보기</button>';
     hideSteps();
     askRes.innerHTML=h; askRes.style.display='block'; askBtn.disabled=false;
+    bindShare(d); track('predict');
+    askRes.scrollIntoView({behavior:'smooth', block:'nearest'});
     document.getElementById('askAgain').addEventListener('click', function(){
       resetAsk();
       askInput.value=''; askInput.style.height='auto';
@@ -1094,7 +1285,8 @@ function openHistoryDetail(hid){
   .then(function(it){
     sheetBody.innerHTML='<button class="again" id="histBack" style="margin:0 0 14px">← 목록으로</button>'
       +'<div class="hd-story">“'+esc(it.story||'')+'”</div>'
-      +'<div class="hd-meta">'+(it.label?esc(it.label)+' · ':'')+timeAgo(it.ts)+' 측정</div>'
+      +'<div class="hd-meta">'+(it.label?esc(it.label)+' · ':'')+timeAgo(it.ts)+' 측정 · '
+      +'<a href="/r/'+encodeURIComponent(it.id||hid)+'">투표·공유 페이지 ›</a></div>'
       +resultHTML(it.result||{});
     document.getElementById('histBack').addEventListener('click', openHistory);
   })
@@ -1489,7 +1681,7 @@ function track(ev, extra){
     fetch('/api/track',{method:'POST',headers:apiHeaders(),body:body,keepalive:ev==='leave'}).catch(function(){});
   }catch(e){}
 }
-track('view',{ref:document.referrer||''});
+track('view',{ref:document.referrer||'', meta:(function(){ try{ return new URLSearchParams(location.search).get('from')||''; }catch(e){ return ''; } })()});
 setInterval(function(){
   if(!document.hidden && (Date.now()-T0)<1800000) track('hb');
 }, 30000);

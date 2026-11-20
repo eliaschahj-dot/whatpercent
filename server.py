@@ -28,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import seo                                    # 검색 유입용 서버 렌더 페이지
+import share                                  # 결과 공유 페이지·카드 이미지·친구 투표
 
 MODEL = "claude-opus-5"
 BASE = Path(__file__).parent
@@ -185,6 +186,7 @@ class TrackIn(BaseModel):
     tab: str = ""
     ref: str = ""
     dur: int = 0
+    meta: str = ""
 
 
 QUESTIONS_SCHEMA = {
@@ -246,8 +248,12 @@ PREDICT_SCHEMA = {
         },
         "tip": {"type": "string", "description": "반대편을 설득하거나 갈등을 줄이는 실용 조언 한 문장"},
         "caveat": {"type": "string", "description": "이 수치가 모델 추정이라는 정직한 고지 한 문장"},
+        "sensitive": {"type": "boolean",
+                      "description": "이 사연과 결과를 불특정 다수에게 공개하기 부적절하면 true. "
+                                     "성적으로 노골적인 내용, 폭력·범죄·자해, 혐오 표현, 특정인을 알아볼 수 있는 정보가 해당한다. "
+                                     "평범한 연애·가족·직장·학교 고민은 false."},
     },
-    "required": ["percent", "verdict", "summary", "factors", "groups", "tip", "caveat"],
+    "required": ["percent", "verdict", "summary", "factors", "groups", "tip", "caveat", "sensitive"],
     "additionalProperties": False,
 }
 
@@ -270,7 +276,13 @@ SYSTEM_PREDICT = """너는 '몇프로' — 한국 대중 공감 온도계 서비
 - percent는 과감하게 구체적 수치로. 다만 caveat에 이것이 실측 여론조사가 아닌 모델 추정임을 명시한다.
 - groups에는 이 사연에서 온도차가 가장 클 것으로 예상되는 집단을 고른다 (세대·성별에 국한하지 말 것 —
   기혼/미혼, 반려인/비반려인, 직장인/자영업자 등 사연에 맞는 축 선택).
-- summary는 정서의 '이유'를 설명한다 (누가 왜 공감하고, 누가 왜 반대하는지). 존댓말 사용."""
+- summary는 정서의 '이유'를 설명한다 (누가 왜 공감하고, 누가 왜 반대하는지). 존댓말 사용.
+- 범죄에 해당하는 행위(성폭력, 폭행, 불법촬영, 스토킹, 협박, 사기 등)를 한 쪽이 정당성을 묻는 사연이면,
+  가해자와 피해자의 성별이나 관계(부부·연인 포함)와 무관하게 공감률을 한 자릿수로 추정하고 verdict에 범죄 소지를 분명히 적는다.
+  한국 대중은 동의 없는 성적 행위를 관계와 상관없이 범죄로 본다. 이 경우 tip은 설득 조언이 아니라
+  피해자 보호와 상담 창구(여성긴급전화 1366, 경찰 112) 안내로 쓴다.
+- 글쓴이가 자해·자살 위험이나 범죄 피해를 호소하면 tip에 도움받을 곳(자살예방상담전화 109, 경찰 112, 여성긴급전화 1366)을 안내한다.
+- sensitive는 이 결과를 다른 이용자에게 보여줘도 되는지에 대한 판단이다. 서비스는 false인 결과만 공유 링크와 공개 목록에 쓴다."""
 
 
 # ---------- 측정 히스토리 (다른 사람들이 뭘 재봤는지) ----------
@@ -483,7 +495,15 @@ DAILY_SCHEMA = {
 SYSTEM_DAILY_SEARCH = """너는 '몇프로' — 한국 대중 공감 온도계 서비스의 에디터 AI다.
 웹 검색으로 지금 한국 온라인 커뮤니티(네이트판, 더쿠, 디시인사이드, 인스티즈, X 등)에서
 실제로 화제가 되고 있는 '찬반이 갈리는 생활 논쟁'을 찾아라.
-정치·종교·특정인 비방은 제외하고, 일상 갈등(경조사, 가사분담, 직장, 연애, 이웃, 소비 습관 등)을 우선한다.
+정치·종교·특정인 비방은 제외한다.
+
+5건은 서로 다른 생활 영역에서 고른다. 독자는 10대 후반부터 40대까지 폭넓다.
+- 연애·썸·이별, 친구 관계, 학교·시험·알바, SNS·온라인 예절 가운데 2건 이상 (10~20대가 자기 일로 느낄 소재)
+- 직장, 가족·명절, 이웃·주거, 소비·돈, 공공장소 예절 가운데 2건 이상
+- 같은 소재(예: 축의금·결혼식)는 하루 1건을 넘기지 않는다.
+- '최근 다룬 논쟁' 목록이 주어지면 그와 쟁점이 겹치는 논쟁은 고르지 않는다. 같은 질문이 날마다 반복되면
+  독자가 볼 이유가 없어지고, 검색에서도 비슷한 페이지끼리 경쟁하게 된다.
+
 찾은 논쟁 5건에 대해 각각: 제목, 어디서 도는지, 쟁점 요약, 양측 입장을 정리해라."""
 
 SYSTEM_DAILY_STRUCT = """너는 '몇프로' — 한국 대중 공감 온도계 서비스의 예측 AI다.
@@ -495,9 +515,16 @@ _daily_lock = threading.Lock()
 _daily_state = {"generating": None, "last_error": None, "error_at": 0.0}
 
 
-def _search_trending() -> str:
+def _recent_block(recent: list[str]) -> str:
+    if not recent:
+        return ""
+    return "\n\n최근 다룬 논쟁(쟁점이 겹치지 않게):\n" + "\n".join(f"- {t}" for t in recent[:40])
+
+
+def _search_trending(recent: list[str]) -> str:
     """웹 검색 도구로 오늘의 논쟁을 조사 (pause_turn 재개 처리 포함)."""
-    msgs = [{"role": "user", "content": "오늘 한국 커뮤니티에서 화제인 찬반 논쟁 5건을 찾아 정리해라."}]
+    msgs = [{"role": "user",
+             "content": "오늘 한국 커뮤니티에서 화제인 찬반 논쟁 5건을 찾아 정리해라." + _recent_block(recent)}]
     resp = None
     for _ in range(6):
         resp = client.messages.create(
@@ -521,14 +548,20 @@ def _generate_daily(date_str: str):
     """오늘의 논쟁 5건 생성 → data/daily/YYYY-MM-DD.json 저장. 백그라운드 스레드에서 실행."""
     try:
         method = "web_search"
+        recent = seo.recent_titles(7)
         try:
-            research = _search_trending()
+            research = _search_trending(recent)
         except Exception:  # noqa: BLE001 — 검색 실패 시 모델 지식 기반으로 폴백
             method = "knowledge"
             research = ("웹 검색을 사용할 수 없다. 네가 아는 한국 커뮤니티에서 반복적으로 화제가 되는 "
-                        "'찬반이 갈리는 생활 논쟁' 유형 중 요즘 시기에 어울리는 5건을 만들어라.")
+                        "'찬반이 갈리는 생활 논쟁' 유형 중 요즘 시기에 어울리는 5건을 만들어라. "
+                        "연애·친구·학교·SNS 소재 2건 이상, 직장·가족·이웃·소비 소재 2건 이상으로 서로 다른 영역에서 고르고, "
+                        "같은 소재는 1건을 넘기지 마라." + _recent_block(recent))
         data = _call(SYSTEM_DAILY_STRUCT, f"조사 내용:\n{research}\n\n논쟁 5건을 구조화하라.", DAILY_SCHEMA)
-        items = data.get("items", [])[:5]
+        # 제목이 깨지거나 요약이 빈 항목이 저장된 적이 있다(6일). 그런 결과는 저장하지 않고 재시도에 맡긴다.
+        items = [it for it in data.get("items", []) if isinstance(it, dict) and seo.valid_item(it)][:5]
+        if len(items) < 3:
+            raise RuntimeError(f"생성 결과가 손상되었습니다 (유효 항목 {len(items)}건).")
         for it in items:
             it["percent"] = max(0, min(100, int(it.get("percent", 50))))
         payload = {
@@ -540,6 +573,7 @@ def _generate_daily(date_str: str):
         tmp = DAILY_DIR / f"{date_str}.json.tmp"
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(DAILY_DIR / f"{date_str}.json")
+        seo.invalidate()
         with _daily_lock:
             _daily_state["last_error"] = None
     except Exception as e:  # noqa: BLE001
@@ -594,6 +628,17 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 seo.configure(DAILY_DIR)
 app.include_router(seo.router)
+
+
+def _find_history(hid: str) -> dict | None:
+    for it in _read_history_all():
+        if it.get("id") == hid:
+            return it
+    return None
+
+
+share.configure(find_entry=_find_history, ip_hash=_ip_hash, data_dir=DATA_DIR)
+app.include_router(share.router)
 
 # 검색엔진 소유 확인 메타태그: 환경변수만 넣으면 자동 삽입 (코드 수정 불필요)
 _index_cache: str | None = None
@@ -656,7 +701,8 @@ def _startup():
 def history(limit: int = 50, offset: int = 0):
     limit = max(1, min(100, limit))
     offset = max(0, min(1_000_000, offset))
-    allitems = _read_history_all()
+    # 민감한 사연과 뜻 없는 입력은 공개 목록에서 뺀다 (기록 자체는 보관)
+    allitems = [it for it in _read_history_all() if share.is_showable(it)]
     page = allitems[offset:offset + limit]
     return {
         "items": [{k: v for k, v in it.items() if k != "result"} for it in page],
@@ -675,14 +721,54 @@ def history_detail(hid: str):
     return JSONResponse(status_code=404, content={"error": "not_found"})
 
 
+@app.get("/api/feed")
+def feed():
+    """첫 화면용 — 최신 논쟁과 최근 측정. 기다리지 않고도 서비스가 무엇을 하는지 보이게 한다."""
+    day = seo.latest_day()
+    debates = []
+    if day:
+        debates = [{"idx": i, "title": it.get("title", ""), "percent": int(it.get("percent") or 0),
+                    "verdict": it.get("verdict", "")} for i, it in enumerate(day["items"], start=1)]
+    seen: set[str] = set()
+    recent = []
+    for it in _read_history_all():
+        if not it.get("id") or not it.get("result") or not share.is_showable(it):
+            continue
+        key = "".join(str(it.get("story", "")).split())[:40]
+        if key in seen:                      # 예시 문구를 그대로 넣은 측정이 여러 건이라 중복 제거
+            continue
+        seen.add(key)
+        recent.append({"id": it["id"], "story": it.get("story", ""), "label": it.get("label", ""),
+                       "percent": int(it.get("percent") or 0), "ts": it.get("ts", 0)})
+        if len(recent) >= 8:
+            break
+    return {"date": day["date"] if day else "", "debates": debates, "recent": recent}
+
+
 @app.get("/api/config")
 def config():
     return {"google_client_id": GOOGLE_CLIENT_ID or None}
 
 
+# 방문(view) 이후 어디서 떠나는지 보기 위한 단계 이벤트. 내용(사연)은 담지 않는다.
+_FUNNEL = [
+    ("view", "첫 화면 방문"),
+    ("teaser", "첫 화면 논쟁 공감률 열어봄"),
+    ("chip", "예시 칩으로 시작"),
+    ("ask", "측정 시작"),
+    ("questions", "맞춤 질문 도착"),
+    ("predict", "결과 확인"),
+    ("share", "공유 버튼 누름"),
+    ("share_view", "공유 페이지 방문"),
+    ("share_vote", "공유 페이지에서 투표"),
+    ("share_cta", "공유 페이지 → 내 사연 재보기"),
+]
+_TRACK_EVENTS = {"tab", "leave", "hb"} | {k for k, _ in _FUNNEL}
+
+
 @app.post("/api/track", status_code=204)
 def track(body: TrackIn, request: Request):
-    if body.event not in ("view", "tab", "leave", "hb"):
+    if body.event not in _TRACK_EVENTS:
         return Response(status_code=204)
     user = _auth_user(request)
     entry = {
@@ -691,11 +777,13 @@ def track(body: TrackIn, request: Request):
         "ip": _ip_hash(request),
         "dur": max(0, min(86400, body.dur)),
     }
-    if body.event == "view":
+    if body.event in ("view", "share_view"):
         entry["ref"] = body.ref[:200]
         entry["ua"] = request.headers.get("user-agent", "")[:120]
     if body.event == "tab":
         entry["tab"] = body.tab[:20]
+    if body.meta:
+        entry["meta"] = body.meta[:60]
     if user:
         entry["uid"] = user["u"]
     _append_jsonl(_events_file_now(), entry)
@@ -794,8 +882,21 @@ def admin_dashboard(request: Request):
         pc = _read_profile_cache(r["uid"])
         r["persona"] = (pc or {}).get("profile", {}).get("persona", "")
 
+    week_ago = time.time() - 7 * 86400
+    funnel_out = []
+    for key, label in _FUNNEL:
+        evs = [e for e in events if e.get("event") == key]
+        recent_evs = [e for e in evs if e.get("ts", 0) >= week_ago]
+        funnel_out.append({
+            "event": key, "label": label,
+            "count": len(evs), "uniques": len({e.get("vid") for e in evs if e.get("vid")}),
+            "count_7d": len(recent_evs), "uniques_7d": len({e.get("vid") for e in recent_evs if e.get("vid")}),
+        })
+
     all_view = [e for e in events if e.get("event") == "view"]
     return {
+        "funnel": funnel_out,
+        "share_votes": share.all_vote_count(),
         "daily": daily_out,
         "refs": sorted(refs.items(), key=lambda kv: -kv[1])[:15],
         "tabs": tabs,
@@ -1085,9 +1186,13 @@ def daily(date: str | None = None):
     f = DAILY_DIR / f"{d}.json"
     if f.exists():
         try:
-            return json.loads(f.read_text(encoding="utf-8"))
+            doc = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return JSONResponse(status_code=500, content={"error": "read_failed"})
+        doc["items"] = [it for it in (doc.get("items") or []) if isinstance(it, dict) and seo.valid_item(it)]
+        if not doc["items"]:                 # 생성이 손상됐던 날 — 없는 날로 취급
+            return JSONResponse(status_code=404, content={"error": "not_found", "date": d})
+        return doc
     if d == today:
         _kick_daily(today)
         with _daily_lock:
@@ -1103,8 +1208,7 @@ def daily(date: str | None = None):
 
 @app.get("/api/daily/dates")
 def daily_dates():
-    dates = sorted((p.stem for p in DAILY_DIR.glob("????-??-??.json")), reverse=True)
-    return {"dates": dates, "curated": CURATED_DATE, "today": _kst_today()}
+    return {"dates": seo.valid_dates(), "curated": CURATED_DATE, "today": _kst_today()}
 
 
 _HEALTH_TTL = 60                                   # 상태 핑 캐시(초) — /api/health는 방문마다 호출된다
@@ -1171,9 +1275,12 @@ def predict(body: PredictIn, request: Request):
             PREDICT_SCHEMA,
         )
         data["percent"] = max(0, min(100, int(data["percent"])))
+        sensitive = bool(data.pop("sensitive", False))
+        hid = pysecrets.token_hex(6)
         _log_history({
-            "id": pysecrets.token_hex(6),
+            "id": hid,
             "ts": int(time.time()),
+            "sensitive": sensitive,
             "story": body.story.strip()[:100],
             "label": body.topic_label.strip()[:40],
             "percent": data["percent"],
@@ -1197,6 +1304,9 @@ def predict(body: PredictIn, request: Request):
             "label": body.topic_label.strip()[:40],
             "percent": data["percent"], "verdict": str(data.get("verdict", ""))[:20],
         })
+        data["id"] = hid
+        data["shareable"] = not sensitive
+        data["tier"] = share.tier(data["percent"])
         return data
     except anthropic.AuthenticationError:
         return JSONResponse(status_code=401, content={"error": "auth", "message": "API 자격증명이 없습니다. ANTHROPIC_API_KEY를 설정하세요."})

@@ -110,6 +110,26 @@ def topic_of(item: dict) -> str:
     return best
 
 
+# ---------- 항목 유효성 ----------
+# 생성이 실패한 날에는 제목이 깨진 문자열이고 요약이 비어 있는 항목 1건만 저장된 적이 있다
+# (2026-08-19 등 6일). 그런 항목은 화면에도 색인에도 내보내지 않는다.
+
+def _hangul(s: str) -> int:
+    return sum(1 for ch in s if "가" <= ch <= "힣")
+
+
+def valid_item(it: dict) -> bool:
+    title = str(it.get("title") or "").strip()
+    summary = str(it.get("summary") or "").strip()
+    if len(title) < 8 or _hangul(title) < 4:
+        return False
+    if len(summary) < 30 or _hangul(summary) < 15:
+        return False
+    if any(ord(ch) < 32 for ch in title):
+        return False
+    return bool(str(it.get("side_a") or "").strip() and str(it.get("side_b") or "").strip())
+
+
 # ---------- 데이터 적재 (mtime 기반 캐시) ----------
 
 _cache: dict = {"at": 0.0, "days": [], "items": []}
@@ -129,7 +149,7 @@ def _load() -> tuple[list[dict], list[dict]]:
                 doc = json.loads(p.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            its = doc.get("items") or []
+            its = [it for it in (doc.get("items") or []) if isinstance(it, dict) and valid_item(it)]
             if not its:
                 continue
             days.append({"date": p.stem, "generated_at": doc.get("generated_at", ""), "items": its})
@@ -137,6 +157,27 @@ def _load() -> tuple[list[dict], list[dict]]:
                 items.append({"date": p.stem, "idx": i, "item": it, "topic": topic_of(it)})
     _cache.update(at=now, days=days, items=items)
     return days, items
+
+
+def valid_dates() -> list[str]:
+    """유효한 논쟁이 1건 이상 있는 날짜, 최신순."""
+    days, _ = _load()
+    return [d["date"] for d in days]
+
+
+def latest_day() -> dict | None:
+    days, _ = _load()
+    return days[0] if days else None
+
+
+def invalidate() -> None:
+    """새 회차가 저장되면 캐시를 버린다."""
+    _cache["at"] = 0.0
+
+
+def recent_titles(n_days: int = 7) -> list[str]:
+    days, _ = _load()
+    return [str(it.get("title", "")) for d in days[:n_days] for it in d["items"]]
 
 
 def _day(date: str) -> dict | None:
@@ -223,7 +264,8 @@ footer.site a{text-decoration:none;margin-right:12px}
 
 
 def page(*, title: str, desc: str, canonical: str, body: str, jsonld: list[dict] | None = None,
-         extra_head: str = "", status: int = 200) -> HTMLResponse:
+         extra_head: str = "", status: int = 200, og_image: str = "",
+         robots: str = "index, follow, max-image-preview:large") -> HTMLResponse:
     blocks = "".join(
         f'<script type="application/ld+json">{json.dumps(j, ensure_ascii=False)}</script>'
         for j in (jsonld or []))
@@ -232,13 +274,14 @@ def page(*, title: str, desc: str, canonical: str, body: str, jsonld: list[dict]
 <title>{e(title)}</title>
 <meta name="description" content="{e(desc)}">
 <link rel="canonical" href="{e(canonical)}">
-<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="robots" content="{e(robots)}">
 <meta name="theme-color" content="#E8503A">
 <meta property="og:type" content="article"><meta property="og:site_name" content="몇프로">
 <meta property="og:locale" content="ko_KR">
 <meta property="og:title" content="{e(title)}"><meta property="og:description" content="{e(desc)}">
 <meta property="og:url" content="{e(canonical)}">
-<meta property="og:image" content="{SITE}/static/og-image.png">
+<meta property="og:image" content="{e(og_image or SITE + '/static/og-image.png')}">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="alternate" type="application/rss+xml" title="몇프로 오늘의 논쟁" href="{SITE}/rss.xml">
