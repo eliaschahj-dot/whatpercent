@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>몇프로 — 내 생각, 대중은 몇 %가 공감할까? | AI 대중 공감 온도계</title>
-<meta name="description" content="사연이나 의견을 입력하면 AI가 맞춤 질문을 만들고 대중 공감률(%)을 예측합니다. 축의금·가사분담·직장·연애·이웃 갈등, 내 편은 몇 %일까?">
+<meta name="description" content="이거 나만 서운해? 사연을 적으면 AI가 대중 공감률(%)을 예측합니다. 연애·친구·학교·직장·가족 고민, 내 편은 몇 %일까? 오늘의 논쟁에 투표하고 AI 예측과 비교해 보세요.">
 <link rel="canonical" href="https://whatpercent.co.kr/">
 <meta name="keywords" content="공감 온도계, 대중 공감, AI 공감 테스트, 여론 예측, 오늘의 논쟁, 커뮤니티 논쟁, 공감률, 몇프로, whatpercent">
 <meta name="robots" content="index, follow">
@@ -123,11 +123,34 @@
   .auth-area .logout:hover{color:var(--ink-soft); text-decoration:underline}
 
   /* ---------- daily 투표 ---------- */
-  .dvote{display:flex; gap:8px}
+  .dvote{display:flex; flex-direction:column; gap:8px}
   .dvote button{
-    flex:1; border:1px solid var(--line); background:var(--surface); color:var(--ink);
-    border-radius:10px; padding:10px; font-size:.88rem; font-weight:700; cursor:pointer;
+    border:1px solid var(--line); background:var(--surface); color:var(--ink);
+    border-radius:10px; padding:12px 14px; font-size:.88rem; font-weight:700; cursor:pointer;
+    text-align:left; line-height:1.45;
   }
+  .dv-skip{border:0; background:none; color:var(--ink-faint); font-size:.78rem; text-decoration:underline;
+    text-underline-offset:4px; cursor:pointer; margin-top:10px; padding:4px 0}
+  .dreveal{display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--line)}
+  .cmp-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:center}
+  .cmp-grid div{background:var(--surface2); border-radius:12px; padding:12px 6px}
+  .cmp-grid b{display:block; font-size:1.6rem; font-variant-numeric:tabular-nums}
+  .cmp-grid span{font-size:.76rem; color:var(--ink-faint)}
+  .cmp-note{font-size:.84rem; color:var(--ink-soft); margin:10px 0 14px; text-align:center}
+  .dv-actions{margin-top:14px}
+  .dv-share{width:100%; border:1px solid var(--line); background:var(--surface); border-radius:10px;
+    padding:11px; font-size:.86rem; font-weight:700; cursor:pointer; color:var(--ink)}
+  .teaser2{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px 15px; margin-bottom:10px}
+  .teaser2 .tt{font-size:.92rem; font-weight:800; line-height:1.4; margin-bottom:10px}
+  .teaser2 .tbtns{display:flex; flex-direction:column; gap:7px}
+  .teaser2 .tbtns button{border:1px solid var(--line); background:var(--bg); color:var(--ink); border-radius:10px;
+    padding:10px 12px; font-size:.83rem; font-weight:700; cursor:pointer; text-align:left; line-height:1.4; font-family:inherit}
+  .teaser2 .tbtns button:hover{border-color:var(--ink-faint)}
+  .teaser2 .tbtns button.sel-a{background:var(--hot); border-color:var(--hot); color:#fff}
+  .teaser2 .tbtns button.sel-b{background:var(--cold); border-color:var(--cold); color:#fff}
+  .teaser2 .tres{display:none; margin-top:10px; font-size:.84rem; color:var(--ink-soft)}
+  .teaser2 .tres b{color:var(--ink); font-variant-numeric:tabular-nums}
+  .teaser2 .tres button{border:0; background:none; color:var(--brand); font-size:.8rem; cursor:pointer; padding:0 0 0 6px; font-family:inherit}
   .dvote button:hover{border-color:var(--ink-faint)}
   .dvote button.sel-a{background:var(--hot); border-color:var(--hot); color:#fff}
   .dvote button.sel-b{background:var(--cold); border-color:var(--cold); color:#fff}
@@ -454,7 +477,7 @@
 
 <section class="hero">
   <h1>내 생각 온도 재보기<span class="deg">.</span></h1>
-  <p class="hero-sub">내 생각, 대중은 몇 %가 공감할까 — 묻기 전에 AI가 이미 쌓인 여론으로 먼저 재드립니다.</p>
+  <p class="hero-sub">이거 나만 서운한 걸까? 내 편이 몇 %인지, AI가 쌓인 여론을 읽고 재드려요.</p>
   <div id="healthBanner" class="trust-flag" style="display:none; margin:0 0 14px; text-align:left"></div>
   <div class="askrow">
     <textarea id="askInput" rows="2" aria-label="내 생각 온도 재보기" placeholder="예: 친구가 내 생일을 까먹었어. 서운한 내가 예민한 걸까?"></textarea>
@@ -1044,17 +1067,18 @@ var STARTERS=[
   '친구가 내 생일을 까먹었어. 서운한 내가 예민한 걸까?',
   '썸 타는 사람이 답장을 반나절씩 늦게 해. 관심 없는 거 맞지?',
   '남자친구가 여사친이랑 단둘이 밥 먹는 거, 싫어해도 되나?',
+  '여자친구가 내 폰을 몰래 봤어. 화내도 되는 거 맞지?',
+  '전 애인이랑 인스타 맞팔 유지하는 거, 지금 애인한테 실례일까?',
+  '친한 친구가 내 전 애인이랑 사귄대. 손절해도 될까?',
+  '단톡방에서 읽고 답 안 하는 친구, 서운해해도 되나?',
   '조별과제 무임승차한 애 이름 빼고 제출해도 될까?',
   '시험 2주 전인데 친구 생일 파티 가도 될까?',
   '알바 대타 부탁이 세 번째인데 이번엔 거절해도 되지?',
-  '퇴근 후에 온 상사 카톡, 다음 날 답장해도 될까?',
-  '점심 메뉴를 매번 팀장이 정하는데 따로 먹겠다고 해도 되나?',
-  '친구 결혼식에 축의금 5만 원 내고 밥 먹어도 될까?',
-  '명절에 시댁 먼저 가는 거, 이제 번갈아 가자고 해도 되나?',
-  '윗집 아이 뛰는 소리, 밤 9시에 인터폰 해도 될까?',
   '더치페이인데 나만 술을 안 마셨어. 술값 빼고 내도 되지?',
-  '단톡방에서 읽고 답 안 하는 친구, 서운해해도 되나?',
-  '전 애인이 준 선물, 헤어지고도 계속 써도 될까?'
+  '친구한테 빌려준 3만 원, 달라고 하면 쪼잔한 걸까?',
+  '퇴근 후에 온 상사 카톡, 다음 날 답장해도 될까?',
+  '친구 결혼식에 축의금 5만 원 내고 밥 먹어도 될까?',
+  '명절에 시댁 먼저 가는 거, 이제 번갈아 가자고 해도 되나?'
 ];
 (function(){
   var pool=STARTERS.slice(), pick=[], n=(window.innerWidth<=480)?3:5;   /* 좁은 화면에서는 피드가 밀리지 않게 3개만 */
@@ -1072,32 +1096,64 @@ var STARTERS=[
 
 /* ---------- 첫 화면 피드: 기다리지 않아도 서비스가 뭘 하는지 보이게 ---------- */
 function goDebates(){ var b=document.querySelector('.topnav button[data-tab="debates"]'); if(b) b.click(); }
+function voteHeaders(){
+  var h={'Content-Type':'application/json'};
+  if(AUTH) h['Authorization']='Bearer '+AUTH.token;
+  return h;
+}
+function cmpText(ai, counts){
+  var t=(counts.a||0)+(counts.b||0), real=t?Math.round(100*(counts.a||0)/t):null;
+  return {t:t, real:real, gap:real===null?0:Math.abs(real-ai)};
+}
 function renderFeed(){
   var wrap=document.getElementById('homeFeed'), fd=document.getElementById('feedDebates'), fr=document.getElementById('feedRecent');
   var deb=(FEED.debates||[]).slice(0,3), rec=(FEED.recent||[]).slice(0,5);
   if(!deb.length && !rec.length){ wrap.style.display='none'; return; }
-  fd.innerHTML=deb.length ? '<h2>🔥 오늘의 논쟁<small>대중은 몇 %가 공감할까요? 눌러서 확인</small></h2>'
+  fd.innerHTML=deb.length ? '<h2>🔥 오늘의 논쟁<small>어느 쪽인가요? 누르면 AI 예측과 실제 투표가 열려요</small></h2>'
     +deb.map(function(x,i){
-      return '<button type="button" class="teaser" data-i="'+i+'"><span class="tt">'+esc(x.title)+'</span>'
-        +'<span class="tp hide">공감률 보기 ›</span></button>';
-    }).join('')+'<button type="button" class="feed-more" id="feedMoreDeb">오늘의 논쟁 전부 보고 투표하기 ›</button>' : '';
+      return '<div class="teaser2" data-i="'+i+'"><div class="tt">'+esc(x.title)+'</div>'
+        +'<div class="tbtns"><button type="button" data-side="a">🔥 '+esc(x.side_a||'공감해요')+'</button>'
+        +'<button type="button" data-side="b">🧊 '+esc(x.side_b||'공감 안 돼요')+'</button></div>'
+        +'<div class="tres"></div></div>';
+    }).join('')+'<button type="button" class="feed-more" id="feedMoreDeb">오늘의 논쟁 전부 보기 ›</button>' : '';
   fr.innerHTML=rec.length ? '<h2>👀 다른 사람들이 재본 생각</h2>'
     +rec.map(function(x){
       var p=Math.max(0,Math.min(100,x.percent|0)), cls=p>=55?'hot':(p<45?'cold':'');
       return '<a class="recent-item" href="/r/'+encodeURIComponent(x.id)+'"><span class="st">'+esc(x.story)+'</span>'
         +'<span class="pc '+cls+'">'+p+'%</span></a>';
     }).join('') : '';
-  fd.querySelectorAll('.teaser').forEach(function(b){
-    b.addEventListener('click', function(){
-      var x=deb[+b.dataset.i], tp=b.querySelector('.tp');
-      if(!tp.classList.contains('hide')){ goDebates(); return; }
-      var p=Math.max(0,Math.min(100,x.percent|0));
-      tp.classList.remove('hide');
-      tp.style.color=p>=55?'var(--hot)':(p<45?'var(--cold)':'var(--ink)');
-      tp.innerHTML=p+'%<span class="tv">'+esc(x.verdict||'')+'</span>';
-      track('teaser');
+  function showTeaser(box, x, side, counts){
+    box.querySelectorAll('.tbtns button').forEach(function(b){
+      b.classList.remove('sel-a','sel-b');
+      if(side && b.dataset.side===side) b.classList.add('sel-'+side);
+    });
+    var ai=Math.max(0,Math.min(100,x.percent|0)), c=cmpText(ai, counts||{a:0,b:0}), tr=box.querySelector('.tres');
+    tr.innerHTML='AI 예측 <b>'+ai+'%</b> · 실제 투표 <b>'+(c.real===null?'–':c.real+'%')+'</b> ('+c.t+'명)'
+      +'<button type="button">자세히 ›</button>';
+    tr.style.display='block';
+    tr.querySelector('button').addEventListener('click', goDebates);
+  }
+  fd.querySelectorAll('.teaser2').forEach(function(box){
+    var x=deb[+box.dataset.i];
+    box.querySelectorAll('.tbtns button').forEach(function(b){
+      b.addEventListener('click', function(){
+        fetch('/api/vote',{method:'POST',headers:voteHeaders(),body:JSON.stringify({date:FEED.date, idx:x.idx-1, side:b.dataset.side})})
+        .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+        .then(function(res){ if(!res.ok) return; showTeaser(box, x, res.d.my, res.d.counts); track('vote',{meta:'home'}); })
+        .catch(function(){});
+      });
     });
   });
+  if(deb.length && FEED.date){
+    fetch('/api/votes/me?date='+encodeURIComponent(FEED.date),{headers:voteHeaders()})
+    .then(function(r){ return r.ok?r.json():null; }).then(function(d){
+      if(!d) return;
+      fd.querySelectorAll('.teaser2').forEach(function(box){
+        var x=deb[+box.dataset.i], k=String(x.idx-1);
+        if((d.votes||{})[k]) showTeaser(box, x, d.votes[k], (d.counts||{})[k]);
+      });
+    }).catch(function(){});
+  }
   var more=document.getElementById('feedMoreDeb'); if(more) more.addEventListener('click', goDebates);
   wrap.style.display='block';
 }
@@ -1427,7 +1483,6 @@ function bindDailyRetry(fn){
 
 function renderDaily(data){
   var items=data.items||[];
-  var isToday=data.date===todayStr;
   var notice=dailyNotice ? '<div class="daily-fallback">'+esc(dailyNotice)+'</div>' : '';
   dailyNotice='';
   var head=notice+'<p class="daily-note" style="margin:0 4px 14px">'+esc(data.date||'')+' '
@@ -1436,16 +1491,21 @@ function renderDaily(data){
   dailyWrap.innerHTML=head+items.map(function(it,i){
     var p=Math.max(0,Math.min(100,it.percent|0));
     var vc=p>=55?'var(--hot)':(p>=45?'var(--ink-soft)':'var(--cold)');
-    return '<article class="card">'
+    return '<article class="card dcard" data-idx="'+i+'" data-ai="'+p+'">'
       +'<div class="src-row"><span class="src-chip src-ai">AI 선정</span><span>'+esc(it.source||'')+'</span></div>'
       +'<h3>'+esc(it.title||'')+'</h3>'
+      +'<p class="basis">'+esc(it.summary||'')+'</p>'
+      +'<div class="vote"><div class="q">당신은 어느 쪽인가요? <span style="color:var(--ink-faint);font-weight:400">누르면 AI 예측과 실제 투표가 열려요</span></div>'
+      +'<div class="dvote" data-idx="'+i+'">'
+      +'<button data-side="a">🔥 '+esc(it.side_a||'공감한다')+'</button>'
+      +'<button data-side="b">🧊 '+esc(it.side_b||'공감 안 된다')+'</button></div>'
+      +'<div class="dv-login"></div>'
+      +'<button type="button" class="dv-skip">투표 없이 결과만 보기</button></div>'
+      +'<div class="dreveal"><div class="dv-cmp"></div>'
       +'<div class="gauge"><div class="gauge-top"><span class="big">'+p+'<small>%</small></span>'
-      +'<span class="verdict" style="color:'+vc+'">'+esc(it.verdict||'')+'</span></div>'
+      +'<span class="verdict" style="color:'+vc+'">AI 예측 · '+esc(it.verdict||'')+'</span></div>'
       +'<div class="track"><span class="marker" style="left:'+p+'%"></span></div>'
       +'<div class="track-cap"><span>0% 냉담</span><span>100% 뜨거운 공감</span></div></div>'
-      +'<p class="basis">'+esc(it.summary||'')+'</p>'
-      +'<div class="sides"><span class="sa">🔥 '+esc(it.side_a||'')+' — <b>'+p+'%</b></span>'
-      +'<span class="sb">🧊 '+esc(it.side_b||'')+' — <b>'+(100-p)+'%</b></span></div>'
       +((it.groups&&it.groups.length)?'<div class="demo-grid"><h4>집단별 예측</h4>'
         +it.groups.map(function(g){
           var gp=Math.max(0,Math.min(100,g.percent|0));
@@ -1453,72 +1513,71 @@ function renderDaily(data){
             +'<div class="bar"><i class="'+(gp<50?'cool':'')+'" style="width:'+gp+'%"></i></div>'
             +'<span class="val">'+gp+'%</span></div>';
         }).join('')+'</div>':'')
-      +(isToday
-        ? '<div class="vote"><div class="q">당신의 선택은? <span style="color:var(--ink-faint);font-weight:400">(오늘만 참여 가능)</span></div>'
-          +'<div class="dvote" data-idx="'+i+'">'
-          +'<button data-side="a">🔥 긍정 — 공감한다</button>'
-          +'<button data-side="b">🧊 부정 — 공감 안 된다</button></div>'
-          +'<div class="dv-login"></div><div class="dv-res"></div></div>'
-        : '<div class="vote-note">지난 논쟁은 열람만 가능합니다 — 투표는 ‘오늘’의 논쟁에서만 할 수 있어요.</div>')
-      +'</article>';
+      +'<div class="dv-actions"><button type="button" class="dv-share" data-n="'+(i+1)+'">📤 이 논쟁 친구에게 물어보기</button></div>'
+      +'</div></article>';
   }).join('');
-  if(isToday){ bindDailyVotes(data.date); refreshMyVotes(data.date); }
+  bindDailyVotes(data.date); refreshMyVotes(data.date);
 }
 
-/* ================= 논쟁 투표 (구글 로그인 필요, 오늘만) ================= */
-function markVote(wrap, side, counts){
+/* ================= 논쟁 투표 (로그인 없이, 지난 논쟁도 가능 · 누르면 예측 대 실제 공개) ================= */
+var DAILY_COUNTS={};
+function revealCard(card, side, counts){
+  counts=counts||{a:0,b:0};
+  var wrap=card.querySelector('.dvote');
   wrap.querySelectorAll('button').forEach(function(x){x.classList.remove('sel-a','sel-b');});
-  var btn=wrap.querySelector('button[data-side="'+side+'"]');
-  if(btn) btn.classList.add(side==='a'?'sel-a':'sel-b');
-  var res=wrap.parentElement.querySelector('.dv-res');
-  var t=counts?(counts.a||0)+(counts.b||0):0;
-  res.innerHTML='내 선택: <b>'+(side==='a'?'긍정':'부정')+'</b>'
-    +(t?' · 지금까지 긍정 <b>'+(counts.a||0)+'</b> vs 부정 <b>'+(counts.b||0)+'</b> ('+t+'명 참여)':'')
-    +' <span style="color:var(--ink-faint)">— 다시 누르면 변경됩니다</span>';
-  res.style.display='block';
-  wrap.parentElement.querySelector('.dv-login').style.display='none';
+  if(side){ var btn=wrap.querySelector('button[data-side="'+side+'"]'); if(btn) btn.classList.add(side==='a'?'sel-a':'sel-b'); }
+  var ai=+card.dataset.ai, c=cmpText(ai, counts);
+  card.querySelector('.dv-cmp').innerHTML='<div class="cmp-grid"><div><b>'+ai+'%</b><span>AI 예측</span></div>'
+    +'<div><b>'+(c.real===null?'–':c.real+'%')+'</b><span>실제 투표 ('+c.t+'명)</span></div></div>'
+    +'<p class="cmp-note">'+(c.t<5?'아직 표가 적어요. 친구에게 물어보면 더 정확해져요.'
+      :(c.gap<=10?'AI 예측이 거의 맞았어요 (차이 '+c.gap+'%p).':'AI 예측과 '+c.gap+'%p 차이가 나요.'))
+    +(side?' <span style="color:var(--ink-faint)">다시 누르면 선택이 바뀝니다.</span>':'')+'</p>';
+  card.querySelector('.dreveal').style.display='block';
+  var sk=card.querySelector('.dv-skip'); if(sk) sk.style.display='none';
+  card.querySelector('.dv-login').style.display='none';
 }
 function bindDailyVotes(date){
   dailyWrap.querySelectorAll('.dvote button').forEach(function(b){
     b.addEventListener('click', function(){
-      var wrap=b.closest('.dvote'), idx=+wrap.dataset.idx;
-      var lg=wrap.parentElement.querySelector('.dv-login');
-      if(!AUTH){
-        lg.innerHTML=GCID
-          ? '<b>구글 로그인이 필요해요</b> — 우측 상단의 구글 로그인 버튼으로 로그인하면 투표에 참여할 수 있습니다.'
-          : '<b>로그인 준비 중</b> — 구글 로그인이 설정되면 참여할 수 있습니다.';
-        lg.style.display='block';
-        return;
-      }
-      fetch('/api/vote',{method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH.token},
+      var card=b.closest('.dcard'), idx=+card.dataset.idx, lg=card.querySelector('.dv-login');
+      fetch('/api/vote',{method:'POST',headers:voteHeaders(),
         body:JSON.stringify({date:date, idx:idx, side:b.dataset.side})})
       .then(function(r){ return r.json().then(function(d){ return {code:r.status, d:d}; }); })
       .then(function(res){
-        if(res.code===401){
-          doLogout();
-          lg.innerHTML='<b>로그인이 만료됐어요</b> — 우측 상단에서 다시 로그인해 주세요.';
-          lg.style.display='block'; return;
-        }
         if(res.code!==200){
           lg.innerHTML='<b>참여 불가</b> — '+esc(res.d.message||'투표에 실패했습니다.');
           lg.style.display='block'; return;
         }
-        markVote(wrap, res.d.my, res.d.counts);
+        DAILY_COUNTS[String(idx)]=res.d.counts;
+        revealCard(card, res.d.my, res.d.counts); track('vote',{meta:'tab'});
       })
       .catch(function(){ lg.innerHTML='<b>오류</b> — 서버에 연결할 수 없습니다.'; lg.style.display='block'; });
     });
   });
+  dailyWrap.querySelectorAll('.dv-skip').forEach(function(b){
+    b.addEventListener('click', function(){
+      var card=b.closest('.dcard'); revealCard(card, null, DAILY_COUNTS[card.dataset.idx]);
+    });
+  });
+  dailyWrap.querySelectorAll('.dv-share').forEach(function(b){
+    b.addEventListener('click', function(){
+      var url=location.origin+'/v/'+date+'/'+b.dataset.n;
+      if(navigator.share){
+        navigator.share({title:'몇프로 — 오늘의 논쟁', text:'이거 너는 어느 쪽이야? 투표해봐', url:url})
+          .then(function(){ track('share',{meta:'debate_native'}); }).catch(function(){});
+      } else { copyText(url, b); track('share',{meta:'debate_copy'}); }
+    });
+  });
 }
 function refreshMyVotes(date){
-  if(!AUTH) return;
-  fetch('/api/votes/me?date='+encodeURIComponent(date),{headers:{'Authorization':'Bearer '+AUTH.token}})
+  fetch('/api/votes/me?date='+encodeURIComponent(date),{headers:voteHeaders()})
   .then(function(r){ return r.ok?r.json():null; })
   .then(function(d){
     if(!d) return;
+    DAILY_COUNTS=d.counts||{};
     Object.keys(d.votes||{}).forEach(function(k){
-      var wrap=dailyWrap.querySelector('.dvote[data-idx="'+k+'"]');
-      if(wrap) markVote(wrap, d.votes[k], (d.counts||{})[k]);
+      var card=dailyWrap.querySelector('.dcard[data-idx="'+k+'"]');
+      if(card) revealCard(card, d.votes[k], DAILY_COUNTS[k]);
     });
   }).catch(function(){});
 }
@@ -1566,7 +1625,7 @@ function onGoogleCred(resp){
     AUTH={token:res.d.token, name:res.d.name, picture:res.d.picture};
     localStorage.setItem('mp_auth', JSON.stringify(AUTH));
     renderAuth();
-    if(curDate && curDate===todayStr) refreshMyVotes(todayStr);
+    if(curDate && curDate!==curatedDate) refreshMyVotes(curDate);
   })
   .catch(function(){ alert('로그인 처리 중 오류가 발생했습니다.'); });
 }

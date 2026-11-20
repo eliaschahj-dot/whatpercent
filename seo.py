@@ -13,6 +13,8 @@ index.html의 자바스크립트 탭 안에서만 그려졌다. 검색엔진 크
   /topics/{주제}             주제별 논쟁 모음
   /guide/{주제}              주제별 데이터 리포트(우리 측정값 집계 = 독자 콘텐츠)
   /sitemap.xml, /rss.xml    전체 URL 색인 / 네이버 RSS 제출용
+  /v/{날짜}/{번호}           투표 도착 페이지 — 광고·공유 링크가 닿는 곳 (질문 하나, 한 번의 탭)
+  /scoreboard               AI 예측 대 실제 투표
 """
 
 from __future__ import annotations
@@ -32,11 +34,30 @@ PER_PAGE = 20
 
 router = APIRouter()
 _daily_dir: Path | None = None
+_votes_fn = None
+_votes_cache: dict = {"at": 0.0, "data": {}}
+MIN_VOTES = 5          # 이보다 적은 표로는 '실제 여론'이라 부르지 않는다
 
 
-def configure(daily_dir: Path) -> None:
-    global _daily_dir
-    _daily_dir = daily_dir
+def configure(daily_dir: Path, votes_fn=None) -> None:
+    global _daily_dir, _votes_fn
+    _daily_dir, _votes_fn = daily_dir, votes_fn
+
+
+def vote_counts() -> dict:
+    """{(날짜, 0부터 세는 항목번호): {"a": n, "b": n}}. 20초 캐시."""
+    now = time.time()
+    if _votes_fn and now - _votes_cache["at"] > 20:
+        try:
+            _votes_cache["data"] = _votes_fn()
+        except Exception:  # noqa: BLE001 — 집계 실패가 페이지를 막지 않게
+            pass
+        _votes_cache["at"] = now
+    return _votes_cache["data"]
+
+
+def invalidate_votes() -> None:
+    _votes_cache["at"] = 0.0
 
 
 # ---------- 주제 분류 ----------
@@ -91,7 +112,14 @@ TOPICS: dict[str, dict] = {
                "노키즈", "흡연", "줄", "공공장소", "엘베", "민원"],
     },
 }
-TOPIC_ORDER = list(TOPICS.keys())
+TOPICS["friend"] = {
+    "name": "친구·학교",
+    "desc": "친구 사이의 서운함과 손절, 조별과제와 시험, 알바를 둘러싼 논쟁",
+    "kw": ["친구", "절친", "우정", "손절", "조별과제", "팀플", "시험", "학교", "학원", "알바", "동아리",
+           "생일", "단짝", "수업", "대학", "과제", "선배", "후배"],
+}
+# 실제 이용자가 10~20대라 연애·친구를 앞에 둔다. 키워드 적중 수가 같을 때도 이 순서가 우선한다.
+TOPIC_ORDER = ["love", "friend", "workplace", "family", "wedding", "money", "neighbor", "online", "life"]
 ETC = "etc"
 ETC_META = {"name": "그 밖의 논쟁", "desc": "어느 묶음에도 들어가지 않는 그날의 화제", "kw": []}
 
@@ -188,6 +216,9 @@ def _day(date: str) -> dict | None:
     return None
 
 
+day = _day
+
+
 def _valid_date(s: str) -> bool:
     return len(s) == 10 and s[4] == "-" and s[7] == "-" and s.replace("-", "").isdigit()
 
@@ -258,6 +289,33 @@ footer.site{border-top:1px solid var(--line);margin-top:40px;padding:22px 0 50px
  font-size:.78rem;color:var(--ink-faint)}
 footer.site a{text-decoration:none;margin-right:12px}
 .note{font-size:.78rem;color:var(--ink-faint);margin:18px 0 0}
+.vbox{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;margin:22px 0}
+.vbox h2{margin:0 0 4px;font-size:1.08rem}
+.vb-sub{margin:0 0 14px;font-size:.86rem;color:var(--ink-soft)}
+.vb-btns{display:grid;gap:10px}
+.vb-btns button{border:1.5px solid var(--line);background:var(--bg);border-radius:12px;padding:14px;font-size:.95rem;
+ font-weight:700;cursor:pointer;color:var(--ink);font-family:inherit;text-align:left;line-height:1.45}
+.vb-btns button:hover{border-color:var(--ink-faint)}
+.vb-btns button.sel-a{background:var(--hot);border-color:var(--hot);color:#fff}
+.vb-btns button.sel-b{background:var(--cold);border-color:var(--cold);color:#fff}
+.vb-res{display:none;margin-top:16px}
+.vb-cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px;text-align:center}
+.vb-cmp div{background:var(--bg);border-radius:12px;padding:12px 6px}
+.vb-cmp b{display:block;font-size:1.6rem;font-variant-numeric:tabular-nums}
+.vb-cmp span{font-size:.76rem;color:var(--ink-faint)}
+.vb-gap{font-size:.86rem;color:var(--ink-soft);margin:12px 0 0;text-align:center}
+.vb-share{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}
+.vb-share button{flex:1;min-width:120px;border:1px solid var(--line);background:var(--surface);border-radius:99px;
+ padding:10px 12px;font-size:.84rem;cursor:pointer;color:var(--ink-soft);font-family:inherit}
+.vb-skip{text-align:center;margin:-8px 0 18px}
+.vb-skip button{border:0;background:none;color:var(--ink-faint);font-size:.8rem;text-decoration:underline;
+ text-underline-offset:4px;cursor:pointer;font-family:inherit}
+.sb-row{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:baseline;padding:11px 2px;
+ border-bottom:1px dotted var(--line);font-size:.9rem}
+.sb-row a{text-decoration:none}
+.sb-row .n{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+.sb-row .g{font-size:.76rem;color:var(--ink-faint);text-align:right}
+.sb-head{font-size:.74rem;color:var(--ink-faint);border-bottom:1px solid var(--line)}
 @media(max-width:560px){h1{font-size:1.28rem}header.site .wrap{flex-direction:column;align-items:flex-start;gap:6px}
  nav.site a{margin:0 14px 0 0}}
 """
@@ -289,7 +347,7 @@ def page(*, title: str, desc: str, canonical: str, body: str, jsonld: list[dict]
 <style>{_CSS}</style></head><body>
 <header class="site"><div class="wrap">
 <a class="brand" href="/">몇프로<span>%</span></a>
-<nav class="site"><a href="/">공감률 재보기</a><a href="/debates">논쟁 아카이브</a><a href="/topics">주제별</a></nav>
+<nav class="site"><a href="/">공감률 재보기</a><a href="/debates">논쟁 아카이브</a><a href="/topics">주제별</a><a href="/scoreboard">예측 vs 실제</a></nav>
 </div></header>
 <main class="wrap">{body}</main>
 <footer class="site"><div class="wrap">
@@ -303,6 +361,104 @@ def page(*, title: str, desc: str, canonical: str, body: str, jsonld: list[dict]
 def _cta(label: str = "내 사연은 몇 %가 공감할까?") -> str:
     return (f'<a class="cta" href="/"><b>{e(label)}</b>'
             '<span>사연을 입력하면 AI가 맞춤 질문을 만들고 대중 공감률(%)을 예측합니다. 30초면 됩니다.</span></a>')
+
+
+def _vote_box(date: str, idx: int, it: dict, mode: str) -> str:
+    """투표 상자. mode — 'detail': 검색으로 들어온 상세 페이지 / 'land': 광고·공유 도착 페이지."""
+    pct = int(it.get("percent") or 0)
+    return (f'<section class="vbox" id="voteBox" data-date="{e(date)}" data-idx="{idx - 1}" data-n="{idx}" '
+            f'data-ai="{pct}" data-mode="{e(mode)}">'
+            '<h2>당신은 어느 쪽인가요?</h2>'
+            '<p class="vb-sub">누르면 AI 예측과 실제 투표를 비교해 드려요. 가입은 필요 없어요.</p>'
+            f'<div class="vb-btns"><button type="button" data-side="a">🔥 {e(it.get("side_a"))}</button>'
+            f'<button type="button" data-side="b">🧊 {e(it.get("side_b"))}</button></div>'
+            '<div class="vb-res" id="vbRes"></div>'
+            '<div class="vb-share"><button type="button" id="vbShare">📤 친구에게 물어보기</button>'
+            '<button type="button" id="vbCopy">🔗 링크 복사</button></div></section>')
+
+
+_VOTE_JS = """<script>
+(function(){
+  var box=document.getElementById('voteBox'); if(!box) return;
+  var date=box.dataset.date, idx=box.dataset.idx, n=box.dataset.n, ai=+box.dataset.ai, mode=box.dataset.mode;
+  var res=document.getElementById('vbRes'), last={a:0,b:0};
+  var vid='anon'; try{ vid=localStorage.getItem('mp_vid'); if(!vid){ vid=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('mp_vid',vid);} }catch(e){}
+  var sid=Math.random().toString(36).slice(2), t0=Date.now(), from='';
+  try{ from=new URLSearchParams(location.search).get('from')||''; }catch(e){}
+  function hdr(){ var h={'Content-Type':'application/json'};
+    try{ var a=JSON.parse(localStorage.getItem('mp_auth')||'null'); if(a&&a.token) h['Authorization']='Bearer '+a.token; }catch(e){}
+    return h; }
+  function track(ev, meta){
+    try{ fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},keepalive:true,
+      body:JSON.stringify({vid:vid,sid:sid,event:ev,meta:meta||'',ref:document.referrer||'',dur:Math.round((Date.now()-t0)/1000)})}).catch(function(){}); }catch(e){}
+  }
+  track(mode==='land'?'land_view':'debate_view', from||(date+'/'+n));
+  function reveal(mine, c){
+    c=c||{a:0,b:0}; last=c;
+    box.querySelectorAll('.vb-btns button').forEach(function(b){
+      b.classList.remove('sel-a','sel-b');
+      if(mine && b.dataset.side===mine) b.classList.add('sel-'+mine);
+    });
+    var t=(c.a||0)+(c.b||0), real=t?Math.round(100*(c.a||0)/t):null, gap=real===null?0:Math.abs(real-ai);
+    res.innerHTML='<div class="vb-cmp"><div><b>'+ai+'%</b><span>AI 예측</span></div>'
+      +'<div><b>'+(real===null?'–':real+'%')+'</b><span>실제 투표 ('+t+'명)</span></div></div>'
+      +'<p class="vb-gap">'+(t<5?'아직 표가 적어요. 친구에게 물어보면 더 정확해져요.'
+        :(gap<=10?'AI 예측이 거의 맞았어요 (차이 '+gap+'%p).':'AI 예측과 '+gap+'%p 차이가 나요.'))+'</p>';
+    res.style.display='block';
+    document.querySelectorAll('[data-after-vote]').forEach(function(el){ el.hidden=false; });
+    var sk=document.getElementById('vbSkip'); if(sk) sk.parentElement.style.display='none';
+  }
+  fetch('/api/votes/me?date='+encodeURIComponent(date),{headers:hdr()}).then(function(r){return r.json();}).then(function(d){
+    last=(d.counts||{})[idx]||last;
+    var mine=(d.votes||{})[idx]; if(mine) reveal(mine, last);
+  }).catch(function(){});
+  box.querySelectorAll('.vb-btns button').forEach(function(b){
+    b.addEventListener('click', function(){
+      fetch('/api/vote',{method:'POST',headers:hdr(),body:JSON.stringify({date:date, idx:+idx, side:b.dataset.side})})
+      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+      .then(function(x){ if(!x.ok) return; reveal(x.d.my, x.d.counts); track(mode==='land'?'land_vote':'vote', mode); })
+      .catch(function(){});
+    });
+  });
+  var sk=document.getElementById('vbSkip'); if(sk) sk.addEventListener('click', function(){ reveal(null, last); });
+  var url=location.origin+'/v/'+date+'/'+n;
+  function copy(btn){
+    var done=function(){ var o=btn.textContent; btn.textContent='복사했어요 ✓'; setTimeout(function(){btn.textContent=o;},1600); };
+    var legacy=function(){
+      try{ var ta=document.createElement('textarea'); ta.value=url; ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select(); var ok=document.execCommand('copy'); document.body.removeChild(ta);
+        if(ok){ done(); return; } }catch(e){}
+      btn.textContent=url;
+    };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(done).catch(legacy); }
+    else { legacy(); }
+  }
+  document.getElementById('vbCopy').addEventListener('click', function(){ copy(this); track('share','debate_copy'); });
+  document.getElementById('vbShare').addEventListener('click', function(){
+    var self=this;
+    if(navigator.share){ navigator.share({title:document.title, text:'이거 너는 어느 쪽이야? 투표해봐', url:url}).then(function(){ track('share','debate_native'); }).catch(function(){}); }
+    else { copy(self); track('share','debate_copy'); }
+  });
+  var nx=document.getElementById('vbNext'); if(nx) nx.addEventListener('click', function(){ track('land_next'); });
+  var ct=document.getElementById('vbCta'); if(ct) ct.addEventListener('click', function(){ track('land_cta'); });
+})();
+</script>"""
+
+
+def _next_debate(date: str, idx: int) -> tuple[str, dict] | None:
+    """투표 뒤에 이어서 보여줄 논쟁: 같은 날 다음 항목 → 그 전날 첫 항목 → 가장 최근 날 첫 항목."""
+    days, _ = _load()
+    order = [d["date"] for d in days]
+    if date not in order:
+        return None
+    d = days[order.index(date)]
+    if idx < len(d["items"]):
+        return f"/v/{date}/{idx + 1}", d["items"][idx]
+    pos = order.index(date) + 1
+    nd = days[pos] if pos < len(days) else days[0]
+    if nd["date"] == date and len(days) == 1:
+        return None
+    return f"/v/{nd['date']}/1", nd["items"][0]
 
 
 def _item_card(row: dict, *, show_date: bool = True) -> str:
@@ -415,7 +571,8 @@ def debate_detail(date: str, idx: int):
             f'<h2>무엇이 쟁점인가</h2><p>{e(it.get("summary"))}</p>',
             '<h2>양측 입장</h2><div class="sides">',
             f'<div class="side a"><b>공감하는 쪽</b>{e(it.get("side_a"))}</div>',
-            f'<div class="side b"><b>공감하지 않는 쪽</b>{e(it.get("side_b"))}</div></div>']
+            f'<div class="side b"><b>공감하지 않는 쪽</b>{e(it.get("side_b"))}</div></div>',
+            _vote_box(date, idx, it, "detail")]
     if groups:
         rows = "".join(f'<tr><td>{e(g.get("label"))}</td><td>{int(g.get("percent") or 0)}%</td></tr>'
                        for g in groups)
@@ -423,6 +580,7 @@ def debate_detail(date: str, idx: int):
                     f'<table class="groups"><thead><tr><th>집단</th><th>공감률</th></tr></thead>'
                     f'<tbody>{rows}</tbody></table>')
     body.append(_cta("이 논쟁, 내 입장은 몇 %가 공감할까?"))
+    body.append(_VOTE_JS)
 
     same_day = [f'<li><a href="/debates/{date}/{i}">{e(x.get("title"))}</a></li>'
                 for i, x in enumerate(d["items"], start=1) if i != idx]
@@ -443,6 +601,7 @@ def debate_detail(date: str, idx: int):
         desc=desc,
         canonical=f"{SITE}/debates/{date}/{idx}",
         body="".join(body),
+        og_image=f"{SITE}/og/d/{date}/{idx}.png",
         jsonld=[{"@context": "https://schema.org", "@type": "Article",
                  "headline": str(it.get("title"))[:110], "description": desc,
                  "datePublished": date, "dateModified": date, "inLanguage": "ko",
@@ -451,6 +610,98 @@ def debate_detail(date: str, idx: int):
                  "publisher": {"@type": "Organization", "name": "몇프로",
                                "logo": {"@type": "ImageObject", "url": f"{SITE}/static/og-image.png"}},
                  "mainEntityOfPage": {"@type": "WebPage", "@id": f"{SITE}/debates/{date}/{idx}"}}])
+
+
+@router.get("/v/{date}/{idx}")
+def vote_landing(date: str, idx: int):
+    """광고·공유 링크가 닿는 곳. 질문 하나와 버튼 둘만 먼저 보여주고, 누르면 결과가 열린다.
+
+    홈으로 보내면 1분짜리 측정을 해야 뭔가를 얻는다. 여기서는 한 번의 탭으로 참여가 끝난다.
+    검색엔진에는 /debates/{날짜}/{번호}가 대표 주소이므로 이 페이지는 noindex.
+    """
+    d = _day(date) if _valid_date(date) else None
+    if not d or idx < 1 or idx > len(d["items"]):
+        return page(title="논쟁을 찾을 수 없습니다 | 몇프로", desc="요청한 논쟁 기록이 없습니다.",
+                    canonical=f"{SITE}/debates", body="<h1>논쟁을 찾을 수 없습니다</h1>"
+                    '<p class="lede"><a href="/debates">다른 논쟁 보러 가기</a></p>',
+                    robots="noindex, follow", status=404)
+    it = d["items"][idx - 1]
+    tm = topic_meta(topic_of(it))
+    groups = it.get("groups") or []
+    rows = "".join(f'<tr><td>{e(g.get("label"))}</td><td>{int(g.get("percent") or 0)}%</td></tr>' for g in groups)
+    after = [f'<p class="meta">AI 판정 · {e(it.get("verdict"))}</p>']
+    if rows:
+        after.append('<h2>집단별 예측 공감률</h2><table class="groups"><thead><tr><th>집단</th><th>공감률</th></tr>'
+                     f'</thead><tbody>{rows}</tbody></table>')
+    nxt = _next_debate(date, idx)
+    if nxt:
+        after.append(f'<a class="cta" id="vbNext" href="{nxt[0]}"><b>다음 논쟁 투표하기 ›</b>'
+                     f'<span>{e(nxt[1].get("title"))}</span></a>')
+    after.append('<a class="cta" id="vbCta" href="/?from=land"><b>내 고민은 몇 %가 공감할까?</b>'
+                 '<span>사연을 적으면 AI가 대중 공감률(%)을 예측합니다. 무료, 가입 없이.</span></a>')
+    body = [f'<p class="crumb">몇프로 · 오늘의 논쟁 · {e(tm["name"])}</p>',
+            f'<h1>{e(it.get("title"))}</h1>',
+            f'<p class="lede">{e(it.get("summary"))}</p>',
+            _vote_box(date, idx, it, "land"),
+            '<p class="vb-skip"><button type="button" id="vbSkip">투표 없이 결과만 보기</button></p>',
+            f'<div data-after-vote hidden>{"".join(after)}</div>',
+            '<p class="note">AI 예측은 여론조사가 아니라 모델의 추정입니다. 실제 투표는 이 페이지를 본 사람들의 응답입니다.</p>',
+            _VOTE_JS]
+    return page(title=f"{it.get('title')} — 당신의 선택은? | 몇프로",
+                desc=f"{str(it.get('summary', ''))[:110]} 투표하고 AI 예측과 비교해 보세요.",
+                canonical=f"{SITE}/debates/{date}/{idx}", body="".join(body),
+                robots="noindex, follow", og_image=f"{SITE}/og/d/{date}/{idx}.png")
+
+
+@router.get("/scoreboard")
+def scoreboard():
+    """AI 예측 대 실제 투표. 다른 곳에 없는 데이터라 이 서비스가 믿을 만한지 스스로 보여주는 자리다."""
+    days, items = _load()
+    vc = vote_counts()
+    rows = []
+    for r in items:
+        c = vc.get((r["date"], r["idx"] - 1))
+        if not c:
+            continue
+        total = c.get("a", 0) + c.get("b", 0)
+        if total < MIN_VOTES:
+            continue
+        ai = int(r["item"].get("percent") or 0)
+        real = round(c.get("a", 0) * 100 / total)
+        rows.append({"r": r, "ai": ai, "real": real, "total": total, "gap": abs(ai - real)})
+    body = ['<h1>AI 예측 vs 실제 투표</h1>',
+            '<p class="lede">몇프로의 AI는 논쟁마다 "대중의 몇 %가 공감할지"를 먼저 예측합니다. '
+            '여기서는 그 예측을 실제 투표 결과와 나란히 놓습니다. AI가 틀린 것도 그대로 보여드립니다.</p>']
+    if rows:
+        avg = round(sum(x["gap"] for x in rows) / len(rows))
+        same = sum(1 for x in rows if (x["ai"] >= 50) == (x["real"] >= 50))
+        body.append(f'<table class="groups"><tbody>'
+                    f'<tr><td>비교한 논쟁 ({MIN_VOTES}표 이상)</td><td>{len(rows)}건</td></tr>'
+                    f'<tr><td>예측과 실제의 평균 차이</td><td>{avg}%p</td></tr>'
+                    f'<tr><td>다수 의견의 방향을 맞힌 비율</td><td>{round(same * 100 / len(rows))}%</td></tr>'
+                    f'</tbody></table>')
+        body.append('<div class="sb-row sb-head"><span>논쟁</span><span>AI</span><span>실제</span><span>표</span></div>')
+        for x in rows[:100]:
+            r = x["r"]
+            body.append(f'<div class="sb-row"><a href="/debates/{r["date"]}/{r["idx"]}">{e(r["item"].get("title"))}</a>'
+                        f'<span class="n">{x["ai"]}%</span><span class="n">{x["real"]}%</span>'
+                        f'<span class="g">{x["total"]}표</span></div>')
+    else:
+        body.append(f'<p>아직 {MIN_VOTES}표 이상 모인 논쟁이 없습니다. 표가 모이는 대로 이곳에 비교 결과가 쌓입니다.</p>')
+    if days:
+        body.append('<h2>지금 투표할 수 있는 논쟁</h2>')
+        d0 = days[0]
+        for i, it in enumerate(d0["items"], start=1):
+            c = vc.get((d0["date"], i - 1)) or {}
+            n = c.get("a", 0) + c.get("b", 0)
+            body.append(f'<article class="card"><h3><a href="/v/{d0["date"]}/{i}">{e(it.get("title"))}</a></h3>'
+                        f'<p class="meta" style="margin:6px 0 0">지금까지 {n}표 · 투표하면 AI 예측이 열립니다</p></article>')
+    body.append(_cta())
+    return page(title="AI 예측 vs 실제 투표 — 몇프로는 얼마나 맞혔나 | 몇프로",
+                desc="AI가 예측한 대중 공감률과 실제 투표 결과를 논쟁별로 비교합니다. 평균 차이와 적중률을 그대로 공개합니다.",
+                canonical=f"{SITE}/scoreboard", body="".join(body),
+                jsonld=[{"@context": "https://schema.org", "@type": "CollectionPage",
+                         "name": "AI 예측 vs 실제 투표", "url": f"{SITE}/scoreboard", "inLanguage": "ko"}])
 
 
 @router.get("/topics")
@@ -594,6 +845,7 @@ def sitemap():
         (f"{SITE}/", today, "daily", "1.0"),
         (f"{SITE}/debates", today, "daily", "0.9"),
         (f"{SITE}/topics", today, "weekly", "0.8"),
+        (f"{SITE}/scoreboard", today, "daily", "0.7"),
     ]
     for slug in TOPIC_ORDER:
         if any(r["topic"] == slug for r in items):

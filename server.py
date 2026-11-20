@@ -375,7 +375,9 @@ def _kst_date_of(ts: int) -> str:
     return datetime.fromtimestamp(ts, KST).strftime("%Y-%m-%d")
 
 
-# ---------- 논쟁 투표 (구글 로그인 사용자, 오늘만) ----------
+# ---------- 논쟁 투표 ----------
+# 처음에는 구글 로그인 회원만, 그날의 논쟁에만 투표할 수 있었다. 석 달 동안 운영자 외 투표가 14건뿐이라
+# 2026-11-20부터 로그인 없이, 지난 논쟁에도 투표할 수 있게 했다. 성향 분석은 계속 회원 전용이다.
 VOTES_FILE = DATA_DIR / "votes.jsonl"
 PROFILE_DIR = DATA_DIR / "profiles"
 PROFILE_DIR.mkdir(parents=True, exist_ok=True)
@@ -420,6 +422,25 @@ def _vote_counts(date: str) -> dict:
         c = counts.setdefault(v["idx"], {"a": 0, "b": 0})
         c[v["side"]] = c.get(v["side"], 0) + 1
     return counts
+
+
+def _all_vote_counts() -> dict:
+    """{(날짜, 항목번호): {"a": n, "b": n}} — 예측 대 실제 비교 페이지가 쓴다."""
+    out: dict[tuple, dict[str, int]] = {}
+    for v in _effective_votes(_read_all_votes()).values():
+        if v.get("side") not in ("a", "b"):
+            continue
+        c = out.setdefault((v.get("date"), v.get("idx")), {"a": 0, "b": 0})
+        c[v["side"]] += 1
+    return out
+
+
+def _voter(request: Request) -> tuple[str, dict | None]:
+    """투표자 식별값. 로그인했으면 계정, 아니면 IP 해시(원본 IP는 저장하지 않는다)."""
+    user = _auth_user(request)
+    if user:
+        return user["u"], user
+    return "anon:" + _ip_hash(request), None
 
 
 PROFILE_SCHEMA = {
@@ -497,10 +518,10 @@ SYSTEM_DAILY_SEARCH = """너는 '몇프로' — 한국 대중 공감 온도계 �
 실제로 화제가 되고 있는 '찬반이 갈리는 생활 논쟁'을 찾아라.
 정치·종교·특정인 비방은 제외한다.
 
-5건은 서로 다른 생활 영역에서 고른다. 독자는 10대 후반부터 40대까지 폭넓다.
-- 연애·썸·이별, 친구 관계, 학교·시험·알바, SNS·온라인 예절 가운데 2건 이상 (10~20대가 자기 일로 느낄 소재)
-- 직장, 가족·명절, 이웃·주거, 소비·돈, 공공장소 예절 가운데 2건 이상
-- 같은 소재(예: 축의금·결혼식)는 하루 1건을 넘기지 않는다.
+5건은 서로 다른 생활 영역에서 고른다. 이 서비스를 실제로 쓰는 사람은 10대 후반~20대가 가장 많다.
+- 3건은 그 독자가 자기 일로 느낄 소재에서 고른다: 연애·썸·이별, 친구 관계, 학교·시험·조별과제, 알바, SNS·단톡방 예절.
+- 2건은 사회초년생의 직장 생활, 가족, 돈·소비, 공공장소 예절 같은 영역에서 고른다.
+- 같은 소재는 하루 1건을 넘기지 않는다. 축의금·결혼식처럼 이미 여러 번 다룬 소재는 새로운 쟁점일 때만 고른다.
 - '최근 다룬 논쟁' 목록이 주어지면 그와 쟁점이 겹치는 논쟁은 고르지 않는다. 같은 질문이 날마다 반복되면
   독자가 볼 이유가 없어지고, 검색에서도 비슷한 페이지끼리 경쟁하게 된다.
 
@@ -555,7 +576,7 @@ def _generate_daily(date_str: str):
             method = "knowledge"
             research = ("웹 검색을 사용할 수 없다. 네가 아는 한국 커뮤니티에서 반복적으로 화제가 되는 "
                         "'찬반이 갈리는 생활 논쟁' 유형 중 요즘 시기에 어울리는 5건을 만들어라. "
-                        "연애·친구·학교·SNS 소재 2건 이상, 직장·가족·이웃·소비 소재 2건 이상으로 서로 다른 영역에서 고르고, "
+                        "연애·친구·학교·알바·SNS 소재 3건, 직장·가족·소비 소재 2건으로 서로 다른 영역에서 고르고, "
                         "같은 소재는 1건을 넘기지 마라." + _recent_block(recent))
         data = _call(SYSTEM_DAILY_STRUCT, f"조사 내용:\n{research}\n\n논쟁 5건을 구조화하라.", DAILY_SCHEMA)
         # 제목이 깨지거나 요약이 빈 항목이 저장된 적이 있다(6일). 그런 결과는 저장하지 않고 재시도에 맡긴다.
@@ -626,7 +647,7 @@ def _call(system: str, user: str, schema: dict) -> dict:
 
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
-seo.configure(DAILY_DIR)
+seo.configure(DAILY_DIR, votes_fn=_all_vote_counts)
 app.include_router(seo.router)
 
 
@@ -728,7 +749,9 @@ def feed():
     debates = []
     if day:
         debates = [{"idx": i, "title": it.get("title", ""), "percent": int(it.get("percent") or 0),
-                    "verdict": it.get("verdict", "")} for i, it in enumerate(day["items"], start=1)]
+                    "verdict": it.get("verdict", ""), "side_a": it.get("side_a", ""), "side_b": it.get("side_b", ""),
+                    "topic": seo.topic_of(it)} for i, it in enumerate(day["items"], start=1)]
+        debates.sort(key=lambda x: 0 if x["topic"] in ("love", "friend") else 1)   # 안정 정렬 — 나머지는 원래 순서
     seen: set[str] = set()
     recent = []
     for it in _read_history_all():
@@ -762,6 +785,12 @@ _FUNNEL = [
     ("share_view", "공유 페이지 방문"),
     ("share_vote", "공유 페이지에서 투표"),
     ("share_cta", "공유 페이지 → 내 사연 재보기"),
+    ("vote", "논쟁 투표 (홈·논쟁 탭·상세 페이지)"),
+    ("debate_view", "논쟁 상세 페이지 방문 (검색 유입 등)"),
+    ("land_view", "투표 도착 페이지 방문 (광고·공유)"),
+    ("land_vote", "도착 페이지에서 투표"),
+    ("land_next", "도착 페이지 → 다음 논쟁"),
+    ("land_cta", "도착 페이지 → 내 사연 재보기"),
 ]
 _TRACK_EVENTS = {"tab", "leave", "hb"} | {k for k, _ in _FUNNEL}
 
@@ -867,7 +896,7 @@ def admin_dashboard(request: Request):
     votes_out = [{
         "ts": v.get("ts", 0), "date": v.get("date", ""), "idx": v.get("idx", 0),
         "side": v.get("side", ""), "title": v.get("title", ""),
-        "name": name_by_uid.get(v.get("uid", ""), "(알 수 없음)"),
+        "name": name_by_uid.get(v.get("uid", "")) or ("비로그인" if v.get("anon") else "(알 수 없음)"),
     } for v in sorted(eff_votes, key=lambda v: -v.get("ts", 0))[:200]]
 
     measures_out = [{
@@ -1062,45 +1091,43 @@ def auth_google(body: GoogleAuthIn):
 
 @app.post("/api/vote")
 def vote(body: VoteIn, request: Request):
-    user = _auth_user(request)
-    if not user:
-        return JSONResponse(status_code=401, content={
-            "error": "login_required", "message": "구글 로그인을 해야 참여할 수 있습니다."})
-    today = _kst_today()
-    if body.date != today:
-        return JSONResponse(status_code=400, content={
-            "error": "not_today", "message": "투표는 '오늘'의 논쟁에만 참여할 수 있습니다."})
     if body.side not in ("a", "b"):
         return JSONResponse(status_code=400, content={"error": "bad_side"})
-    f = DAILY_DIR / f"{today}.json"
-    if not f.exists():
-        return JSONResponse(status_code=400, content={"error": "no_daily", "message": "오늘의 논쟁이 아직 준비되지 않았습니다."})
-    items = json.loads(f.read_text(encoding="utf-8")).get("items", [])
+    d = body.date.strip()
+    if not (len(d) == 10 and d[4] == "-" and d[7] == "-" and d.replace("-", "").isdigit()):
+        return JSONResponse(status_code=400, content={"error": "bad_date"})
+    day = seo.day(d)
+    if not day:
+        return JSONResponse(status_code=400, content={"error": "no_daily", "message": "이 날짜의 논쟁이 없습니다."})
+    items = day["items"]
     if not (0 <= body.idx < len(items)):
         return JSONResponse(status_code=400, content={"error": "bad_idx"})
     it = items[body.idx]
-    _append_vote({
-        "uid": user["u"], "date": today, "idx": body.idx, "side": body.side,
+    key, user = _voter(request)
+    entry = {
+        "uid": key, "date": d, "idx": body.idx, "side": body.side,
         "title": it.get("title", "")[:120],
         "side_text": (it.get("side_a") if body.side == "a" else it.get("side_b", ""))[:120],
         "ts": int(time.time()),
-    })
-    counts = _vote_counts(today).get(body.idx, {"a": 0, "b": 0})
-    return {"ok": True, "my": body.side, "counts": counts}
+    }
+    if not user:
+        entry["anon"] = True
+    _append_vote(entry)
+    seo.invalidate_votes()
+    counts = _vote_counts(d).get(body.idx, {"a": 0, "b": 0})
+    return {"ok": True, "my": body.side, "counts": counts, "ai": int(it.get("percent") or 0)}
 
 
 @app.get("/api/votes/me")
 def votes_me(request: Request, date: str | None = None):
-    user = _auth_user(request)
-    if not user:
-        return JSONResponse(status_code=401, content={
-            "error": "login_required", "message": "구글 로그인을 해야 참여할 수 있습니다."})
+    key, user = _voter(request)
     d = (date or _kst_today()).strip()
-    eff = _effective_votes([v for v in _read_all_votes() if v.get("date") == d])
-    mine = {str(v["idx"]): v["side"] for v in eff.values() if v.get("uid") == user["u"]}
+    votes = _read_all_votes()
+    eff = _effective_votes([v for v in votes if v.get("date") == d])
+    mine = {str(v["idx"]): v["side"] for v in eff.values() if v.get("uid") == key}
     counts = {str(k): c for k, c in _vote_counts(d).items()}
-    total = len(_effective_votes([v for v in _read_all_votes() if v.get("uid") == user["u"]]))
-    return {"votes": mine, "counts": counts, "my_total": total}
+    total = len(_effective_votes([v for v in votes if v.get("uid") == key]))
+    return {"votes": mine, "counts": counts, "my_total": total, "member": bool(user)}
 
 
 def _profile_cache_file(uid: str) -> Path:

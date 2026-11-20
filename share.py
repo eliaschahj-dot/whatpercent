@@ -202,19 +202,26 @@ def _font_path(bold: bool) -> str | None:
 
 
 def _wrap(draw, text: str, font, width: int, max_lines: int) -> list[str]:
-    lines, cur = [], ""
-    for ch in text:
-        if ch == "\n":
+    """띄어쓰기 단위로 줄을 나눈다. 한 단어가 줄보다 길 때만 글자 단위로 자른다."""
+    lines: list[str] = []
+    for para in text.split("\n"):
+        cur = ""
+        for word in para.split(" "):
+            trial = f"{cur} {word}" if cur else word
+            if draw.textlength(trial, font=font) <= width:
+                cur = trial
+                continue
+            if cur:
+                lines.append(cur)
+            while draw.textlength(word, font=font) > width and len(word) > 1:
+                k = len(word)
+                while k > 1 and draw.textlength(word[:k], font=font) > width:
+                    k -= 1
+                lines.append(word[:k])
+                word = word[k:]
+            cur = word
+        if cur:
             lines.append(cur)
-            cur = ""
-            continue
-        if draw.textlength(cur + ch, font=font) > width and ch not in "”’.,!?…)":
-            lines.append(cur)
-            cur = ch.lstrip()
-        else:                                # 닫는 문장부호는 혼자 다음 줄로 넘기지 않는다
-            cur += ch
-    if cur:
-        lines.append(cur)
     if len(lines) > max_lines:
         lines = lines[:max_lines]
         last = lines[-1]
@@ -224,8 +231,11 @@ def _wrap(draw, text: str, font, width: int, max_lines: int) -> list[str]:
     return lines
 
 
-def render_card(entry: dict) -> bytes | None:
-    """1200x630 PNG. 한글 글꼴을 못 찾으면 None(호출부가 기본 이미지로 돌린다)."""
+def render_card(entry: dict, question: bool = False) -> bytes | None:
+    """1200x630 PNG. 한글 글꼴을 못 찾으면 None(호출부가 기본 이미지로 돌린다).
+
+    question=True면 논쟁 질문 카드: 공감률을 '?'로 가려 눌러보고 싶게 만든다.
+    """
     try:
         from PIL import Image, ImageDraw, ImageFont
     except ImportError:
@@ -238,7 +248,7 @@ def render_card(entry: dict) -> bytes | None:
     BG, CARD, INK, SOFT, FAINT = (244, 245, 242), (255, 255, 255), (34, 37, 31), (92, 97, 86), (139, 144, 131)
     HOT, COLD, LINE = (216, 69, 47), (47, 111, 216), (221, 224, 216)
     pct = max(0, min(100, int(entry.get("percent") or 0)))
-    color = HOT if pct >= 60 else (COLD if pct < 40 else INK)
+    color = (232, 80, 58) if question else (HOT if pct >= 60 else (COLD if pct < 40 else INK))
 
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -260,7 +270,7 @@ def render_card(entry: dict) -> bytes | None:
     if len(story) >= 100:
         story += "…"
     f_story = font(True, 42)
-    lines = _wrap(d, "“" + story + "”", f_story, W - 168, 3)
+    lines = _wrap(d, story if question else "“" + story + "”", f_story, W - 168, 3)
     y = 150
     for ln in lines:
         d.text((84, y), ln, font=f_story, fill=INK)
@@ -269,14 +279,15 @@ def render_card(entry: dict) -> bytes | None:
     # 공감률 + 등급
     f_pct, f_unit = font(True, 170), font(True, 80)
     py = 322
-    num = str(pct)
+    num = "?" if question else str(pct)
     d.text((80, py), num, font=f_pct, fill=color)
     nx = 80 + d.textlength(num, font=f_pct)
     d.text((nx + 6, py + 82), "%", font=f_unit, fill=color)
     tx = nx + 6 + d.textlength("%", font=f_unit) + 40
     f_tier, f_ver = font(True, 54), font(False, 32)
-    d.text((tx, py + 44), tier(pct), font=f_tier, fill=INK)
-    verdict = str(entry.get("verdict") or (entry.get("result") or {}).get("verdict") or "")
+    d.text((tx, py + 44), "당신의 선택은?" if question else tier(pct), font=f_tier, fill=INK)
+    verdict = ("투표하고 AI 예측과 비교해 보세요" if question
+               else str(entry.get("verdict") or (entry.get("result") or {}).get("verdict") or ""))
     if verdict:
         d.text((tx, py + 116), _wrap(d, verdict, f_ver, W - 84 - int(tx), 1)[0], font=f_ver, fill=SOFT)
 
@@ -290,12 +301,13 @@ def render_card(entry: dict) -> bytes | None:
     mask = Image.new("L", (bx1 - bx0, bh), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, bx1 - bx0 - 1, bh - 1], radius=8, fill=255)
     img.paste(grad, (bx0, by), mask)
-    mx = bx0 + (bx1 - bx0) * pct / 100
-    d.ellipse([mx - 17, by + bh / 2 - 17, mx + 17, by + bh / 2 + 17], fill=CARD, outline=INK, width=5)
+    if not question:
+        mx = bx0 + (bx1 - bx0) * pct / 100
+        d.ellipse([mx - 17, by + bh / 2 - 17, mx + 17, by + bh / 2 + 17], fill=CARD, outline=INK, width=5)
 
     f_foot = font(False, 24)
     d.text((84, 556), "whatpercent.co.kr", font=font(True, 24), fill=SOFT)
-    right = "내 생각은 대중 몇 %가 공감할까?"
+    right = "대중은 몇 %가 공감할까?" if question else "내 생각은 대중 몇 %가 공감할까?"
     d.text((W - 84 - d.textlength(right, font=f_foot), 556), right, font=f_foot, fill=FAINT)
 
     buf = io.BytesIO()
@@ -309,7 +321,7 @@ def og_image(name: str):
     it = _entry(hid)
     if not it or not _data_dir:
         return RedirectResponse("/static/og-image.png", status_code=302)
-    cache = _data_dir / "og" / f"{hid}.v2.png"      # 카드 디자인·등급 기준을 바꾸면 버전을 올린다
+    cache = _data_dir / "og" / f"{hid}.v3.png"      # 카드 디자인·등급 기준을 바꾸면 버전을 올린다
     try:
         if cache.exists():
             data = cache.read_bytes()
@@ -323,6 +335,29 @@ def og_image(name: str):
         return RedirectResponse("/static/og-image.png", status_code=302)
     return Response(content=data, media_type="image/png",
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.get("/og/d/{date}/{name}")
+def og_debate_image(date: str, name: str):
+    """논쟁 질문 카드 — 투표 도착 페이지(/v)와 상세 페이지의 미리보기 이미지."""
+    num = name[:-4] if name.endswith(".png") else name
+    d = seo.day(date) if seo._valid_date(date) else None
+    if not d or not num.isdigit() or not (1 <= int(num) <= len(d["items"])) or not _data_dir:
+        return RedirectResponse("/static/og-image.png", status_code=302)
+    it = d["items"][int(num) - 1]
+    cache = _data_dir / "og" / f"d-{date}-{int(num)}.v1.png"
+    try:
+        if cache.exists():
+            data = cache.read_bytes()
+        else:
+            data = render_card({"story": str(it.get("title") or ""), "percent": 50}, question=True)
+            if data:
+                cache.write_bytes(data)
+    except OSError:
+        data = render_card({"story": str(it.get("title") or ""), "percent": 50}, question=True)
+    if not data:
+        return RedirectResponse("/static/og-image.png", status_code=302)
+    return Response(content=data, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 
 # ---------- 공유 페이지 ----------
